@@ -24,7 +24,7 @@ struct ModelRow: View {
             Text(model.modelCreator.name + (model.isPlottable ? "" : " · 指标不完整")).font(.appCaption).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 MetricValue(title: "智力 ↑", value: model.intelligence.map { number($0) } ?? "—")
-                MetricValue(title: "成本 ↓ · $/百万", value: model.cost.map { dollars($0) } ?? "—")
+                MetricValue(title: "混合单价 ↓ · $/百万", value: model.cost.map { dollars($0) } ?? "—")
                 MetricValue(title: "速度 ↑ · token/s", value: model.speed.map { number($0, digits: 0) } ?? "—")
             }
         }.padding(.vertical, 14).contentShape(Rectangle())

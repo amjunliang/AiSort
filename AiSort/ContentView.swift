@@ -29,6 +29,13 @@ struct ContentView: View {
                         scrollContent(minHeight: geometry.size.height)
                     }
                 }
+                if store.updatedAt != nil {
+                    ChartControls(hasModels: !plotted.isEmpty,
+                                  creators: store.creators.filter { store.selectedCreators.contains($0) },
+                                  scale: $scale, offset: $offset, resetCanvas: resetCanvas)
+                        .background(Color(red: 0.965, green: 0.972, blue: 0.962))
+                        .zIndex(1)
+                }
             }
             .coordinateSpace(name: "overviewViewport")
             .background(Color(red: 0.965, green: 0.972, blue: 0.962).ignoresSafeArea())
@@ -79,9 +86,6 @@ struct ContentView: View {
                                     offset: $offset, scale: $scale, showDetail: { selected = $0 })
                             .frame(minHeight: max(280, minHeight * 0.5))
                     }
-                    ChartControls(hasModels: !plotted.isEmpty,
-                                  creators: store.creators.filter { store.selectedCreators.contains($0) },
-                                  scale: $scale, offset: $offset, resetCanvas: resetCanvas)
                 } else if store.isLoading {
                     ProgressView("正在获取模型数据…").frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {

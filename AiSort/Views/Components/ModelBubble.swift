@@ -49,7 +49,7 @@ struct ModelBubble: View {
 
                 HStack(spacing: 10) {
                     compactMetric("智力", number(model.intelligence))
-                    compactMetric("成本", dollars(model.cost))
+                    compactMetric("混合单价", dollars(model.cost))
                     compactMetric("速度", number(model.speed, digits: 0))
                     if !showsName {
                         Button(action: dismiss) {

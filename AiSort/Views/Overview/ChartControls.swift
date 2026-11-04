@@ -40,7 +40,7 @@ struct ChartControls: View {
                     }
                 }
             }
-            Text("Artificial Analysis · 3:1 混合价 / 百万 token")
+            Text("混合单价按输入∶输出 3∶1 计算 · 价格轴对数压缩\n数据来源：Artificial Analysis")
                 .font(.appCaption2).foregroundStyle(.secondary)
         }.padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 12)
     }

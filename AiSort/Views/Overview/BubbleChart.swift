@@ -42,6 +42,12 @@ struct BubbleChart: View {
         visibleBounds(yBounds, offset: offset.height, axisLength: viewportSize.height, inverted: false)
     }
     private var maxSpeed: Double { max(models.compactMap(\.speed).max() ?? 1, 1) }
+    private var featuredModelIDs: Set<String> {
+        let ordered = models.sorted { $0.id < $1.id }
+        let smartest = ordered.max { ($0.intelligence ?? -.infinity) < ($1.intelligence ?? -.infinity) }
+        let costliest = ordered.max { ($0.cost ?? -.infinity) < ($1.cost ?? -.infinity) }
+        return Set([smartest?.id, costliest?.id].compactMap { $0 })
+    }
     private var intelligenceTicks: [Double] {
         let lower = ceil(visibleYBounds.lowerBound), upper = floor(visibleYBounds.upperBound)
         guard lower <= upper else { return [] }
@@ -66,7 +72,7 @@ struct BubbleChart: View {
                     PointMark(x: .value("成本", model.chartCost), y: .value("智力指数", intelligence))
                         .symbolSize(28 + 650 * speed / maxSpeed)
                         .foregroundStyle(creatorColor(model.modelCreator.name).opacity(0.82))
-                        .accessibilityLabel("\(model.name)，智力 \(number(intelligence))，成本 \(dollars(model.cost))，速度 \(number(speed))")
+                        .accessibilityLabel("\(model.name)，智力 \(number(intelligence))，3比1混合单价 \(dollars(model.cost)) 美元每百万 token，速度 \(number(speed))")
                 }
             }
         }
@@ -101,7 +107,11 @@ struct BubbleChart: View {
             }
         }
         .chartXAxisLabel(position: .bottom, alignment: .center) {
-            Text("混合价格 · 美元 / 百万 token").font(.appCaption)
+            Text("混合单价（输入∶输出 = 3∶1）· 美元 / 百万 token")
+                .font(.appCaption)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .help("混合单价按输入与输出 token 数量 3:1 计算；横轴采用对数压缩。")
         }
         .chartYAxisLabel(position: .top, alignment: .leading) {
             Text("智力指数").font(.appCaption)
@@ -165,7 +175,7 @@ struct BubbleChart: View {
                             }
                         })
 
-                    if scale >= 1.5, let frame = proxy.plotFrame {
+                    if let frame = proxy.plotFrame {
                         modelLabels(plotRect: geo[frame])
                     }
                     if let model = referenceModel, let score = model.intelligence,
@@ -235,6 +245,7 @@ struct BubbleChart: View {
     private func modelLabels(plotRect: CGRect) -> some View {
         let candidates = labelCandidates(plotRect: plotRect)
         let labels = candidates.compactMap { candidate -> ChartLabelPlacement? in
+            guard scale >= 1.5 || featuredModelIDs.contains(candidate.id) else { return nil }
             guard let offset = labelOffsets[candidate.id] else { return nil }
             var label = candidate
             label.frame.origin = CGPoint(x: label.anchor.x + offset.width,
@@ -264,7 +275,8 @@ struct BubbleChart: View {
                     .font(.appCaption.weight(.medium))
                     .foregroundStyle(ink)
                     .lineLimit(1)
-                    .fixedSize()
+                    .minimumScaleFactor(0.5)
+                    .frame(width: label.frame.width, alignment: .leading)
                     .offset(x: label.frame.minX, y: label.frame.minY)
             }
         }
@@ -294,7 +306,7 @@ struct BubbleChart: View {
             let name = shortModelName(model.name)
             let radius = sqrt(28 + 650 * speed / maxSpeed) / 2
             let frame = CGRect(x: anchor.x + radius + 4, y: anchor.y - measuredLabelHeight() / 2,
-                               width: measuredLabelWidth(name), height: measuredLabelHeight())
+                               width: min(measuredLabelWidth(name), max(1, plotRect.width - 12)), height: measuredLabelHeight())
             return ChartLabelPlacement(id: model.id, name: name, radius: radius, anchor: anchor, frame: frame)
         }.sorted {
             if $0.anchor.y != $1.anchor.y { return $0.anchor.y < $1.anchor.y }
@@ -305,13 +317,21 @@ struct BubbleChart: View {
 
     private func resolveLabelOffsets(_ candidates: [ChartLabelPlacement], plotRect: CGRect) -> [String: CGSize] {
         let area = plotRect.insetBy(dx: -16, dy: -24)
-        let visible = candidates.filter { area.insetBy(dx: -20, dy: -20).contains($0.anchor) }
+        let featured = featuredModelIDs
+        let visible = candidates.filter {
+            (scale >= 1.5 || featured.contains($0.id)) && area.insetBy(dx: -20, dy: -20).contains($0.anchor)
+        }.sorted {
+            let firstFeatured = featured.contains($0.id), secondFeatured = featured.contains($1.id)
+            if firstFeatured != secondFeatured { return firstFeatured }
+            if $0.anchor.y != $1.anchor.y { return $0.anchor.y < $1.anchor.y }
+            return $0.id < $1.id
+        }
         var occupied = candidates.map {
             CGRect(x: $0.anchor.x - $0.radius - 2, y: $0.anchor.y - $0.radius - 2,
                    width: $0.radius * 2 + 4, height: $0.radius * 2 + 4)
         }
         var result: [String: CGSize] = [:]
-        var placedLabels: [CGRect] = []
+        var placedLabels: [(frame: CGRect, anchorY: CGFloat)] = []
         for label in visible {
             let gap = label.radius + 5
             let right = gap, left = -gap - label.frame.width
@@ -342,7 +362,7 @@ struct BubbleChart: View {
                     if cost($0) != cost($1) { return cost($0) < cost($1) }
                     return $0 < $1
                 }
-                for y in positions where abs(y - naturalY) <= label.frame.height * 4 {
+                for y in positions where featured.contains(label.id) || abs(y - naturalY) <= label.frame.height * 4 {
                     options.append(CGSize(width: x, height: y))
                 }
             }
@@ -351,13 +371,24 @@ struct BubbleChart: View {
                                    width: label.frame.width, height: label.frame.height)
                 guard area.contains(frame),
                       !placedLabels.contains(where: {
-                          $0.minX < frame.maxX && frame.minX < $0.maxX && $0.midY > frame.midY
+                          $0.frame.minX < frame.maxX && frame.minX < $0.frame.maxX &&
+                          (($0.anchorY < label.anchor.y && $0.frame.midY > frame.midY) ||
+                           ($0.anchorY > label.anchor.y && $0.frame.midY < frame.midY))
                       }),
                       !occupied.contains(where: { $0.intersects(frame.insetBy(dx: -2, dy: -1)) }) else { continue }
                 result[label.id] = option
                 occupied.append(frame)
-                placedLabels.append(frame)
+                placedLabels.append((frame, label.anchor.y))
                 break
+            }
+            if result[label.id] == nil && featured.contains(label.id) {
+                // Keep featured names visible even when the chart is exceptionally dense.
+                let x = min(area.maxX - label.frame.width, max(area.minX, label.anchor.x + right))
+                let y = min(area.maxY - label.frame.height, max(area.minY, label.anchor.y + naturalY))
+                result[label.id] = CGSize(width: x - label.anchor.x, height: y - label.anchor.y)
+                let frame = CGRect(x: x, y: y, width: label.frame.width, height: label.frame.height)
+                occupied.append(frame)
+                placedLabels.append((frame, label.anchor.y))
             }
         }
         return result
