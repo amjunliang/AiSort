@@ -1,0 +1,15 @@
+{
+  "originHash" : "a873c6bc77dd10c63e402695d183dd9e272def8b2fc26a3f39bd62a75785aa5f",
+  "pins" : [
+    {
+      "identity" : "layerlens",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/amjunliang/LayerLens.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "30bfa86c30ce44c52ecb2344ab9b62476a5da867"
+      }
+    }
+  ],
+  "version" : 3
+}

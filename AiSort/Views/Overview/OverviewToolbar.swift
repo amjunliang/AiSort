@@ -15,8 +15,8 @@ struct OverviewToolbar: View {
                     .frame(width: 34, height: 34)
                     .background(teal, in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("AI SORT").font(.subheadline.bold()).tracking(0.8)
-                    Text("模型探索").font(.caption2).foregroundStyle(.secondary)
+                    Text("AI SORT").font(.appSubheadline.bold()).tracking(0.8)
+                    Text("模型探索").font(.appCaption2).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 4)

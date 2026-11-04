@@ -10,7 +10,7 @@ struct ModelDetail: View {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         Circle().fill(creatorColor(model.modelCreator.name)).frame(width: 12, height: 12)
-                        Text(model.modelCreator.name).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                        Text(model.modelCreator.name).font(.appSubheadline.weight(.medium)).foregroundStyle(.secondary)
                     }
                     Text(model.name).font(.title.bold()).foregroundStyle(ink)
                     VStack(spacing: 0) {
@@ -21,7 +21,7 @@ struct ModelDetail: View {
                         metric("输出价格", model.pricing.price1mOutputTokens.map { "\(dollars($0)) / 百万 token" } ?? "暂无数据")
                     }.card()
                     Text("混合价格 =（输入价格 × 3 + 输出价格）÷ 4。速度为跨供应商的输出速度中位数。数据由 Artificial Analysis 提供。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.appCaption).foregroundStyle(.secondary)
                     Link("在 Artificial Analysis 查看 ↗", destination: URL(string: "https://artificialanalysis.ai/models/\(model.slug)")!)
                 }.padding(22).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
             }.background(Color(red: 0.965, green: 0.972, blue: 0.962))
@@ -29,6 +29,6 @@ struct ModelDetail: View {
         }.frame(minWidth: 320, minHeight: 400)
     }
     private func metric(_ label: String, _ value: String) -> some View {
-        HStack { Text(label).foregroundStyle(.secondary); Spacer(); Text(value).fontWeight(.medium).multilineTextAlignment(.trailing) }.font(.subheadline).padding(.vertical, 12)
+        HStack { Text(label).foregroundStyle(.secondary); Spacer(); Text(value).fontWeight(.medium).multilineTextAlignment(.trailing) }.font(.appSubheadline).padding(.vertical, 12)
     }
 }

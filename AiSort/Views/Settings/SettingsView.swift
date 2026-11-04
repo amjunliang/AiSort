@@ -13,7 +13,7 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         #endif
                     Text("密钥保存在设备的系统钥匙串中，并直接发送至 Artificial Analysis。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.appCaption).foregroundStyle(.secondary)
                     Link("获取 API Key", destination: URL(string: "https://artificialanalysis.ai/data-api")!)
                 }
                 Section {

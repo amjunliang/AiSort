@@ -11,14 +11,14 @@ struct ChartControls: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Label("气泡越大，输出越快", systemImage: "circle.dotted.circle")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.appCaption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 HStack(spacing: 0) {
                     Button { withAnimation(.easeInOut(duration: 0.2)) { scale = max(1, scale / 1.25); offset = .zero } } label: {
                         Image(systemName: "minus").frame(width: 36, height: 36)
                     }.disabled(scale <= 1).accessibilityLabel("缩小")
                     Text("\(Int(scale * 100))%")
-                        .font(.caption.monospacedDigit()).frame(minWidth: 42)
+                        .font(.appCaption.monospacedDigit()).frame(minWidth: 42)
                         .accessibilityLabel("缩放 \(Int(scale * 100)) 百分比")
                     Button { withAnimation(.easeInOut(duration: 0.2)) { scale = min(5, scale * 1.25) } } label: {
                         Image(systemName: "plus").frame(width: 36, height: 36)
@@ -30,20 +30,19 @@ struct ChartControls: View {
             }
             if hasModels {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 16) {
                         ForEach(creators, id: \.self) { creator in
                             HStack(spacing: 5) {
                                 Circle().fill(creatorColor(creator)).frame(width: 7, height: 7)
-                                Text(creator).font(.caption2).lineLimit(1)
-                            }.padding(.horizontal, 9).padding(.vertical, 6)
-                                .background(.white.opacity(0.8), in: Capsule())
+                                Text(creator).font(.appCaption2).lineLimit(1)
+                            }.padding(.vertical, 6)
                         }
                     }
                 }
             }
             Text("Artificial Analysis · 3:1 混合价 / 百万 token")
-                .font(.caption2).foregroundStyle(.secondary)
-        }.padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 12)
+                .font(.appCaption2).foregroundStyle(.secondary)
+        }.padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 12)
     }
 
 }

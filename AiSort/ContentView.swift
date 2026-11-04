@@ -30,6 +30,7 @@ struct ContentView: View {
                     }
                 }
             }
+            .coordinateSpace(name: "overviewViewport")
             .background(Color(red: 0.965, green: 0.972, blue: 0.962).ignoresSafeArea())
             .toolbar(.hidden)
             .sheet(isPresented: $showSettings) { SettingsView(store: store) }
@@ -50,7 +51,7 @@ struct ContentView: View {
             .onChange(of: store.selectedCreators) { _, _ in resetCanvas() }
             .onChange(of: store.updatedAt) { _, _ in resetCanvas() }
             .task { if store.hasKey && store.updatedAt == nil { await store.refresh() } }
-        }.tint(teal).preferredColorScheme(.light)
+        }.tint(teal).font(.appBody).preferredColorScheme(.light)
     }
 
     private func scrollContent(minHeight: CGFloat) -> some View {
@@ -75,12 +76,8 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ChartCanvas(models: plotted, highlighted: $highlighted, focusRequest: $focusRequest,
-                                    offset: $offset, scale: $scale)
+                                    offset: $offset, scale: $scale, showDetail: { selected = $0 })
                             .frame(minHeight: max(280, minHeight * 0.5))
-                    }
-                    if let model = highlighted, plotted.contains(where: { $0.id == model.id }) {
-                        HighlightCard(model: model, showDetail: { selected = model }, dismiss: { highlighted = nil })
-                            .padding(.horizontal, 12).padding(.top, 8)
                     }
                     ChartControls(hasModels: !plotted.isEmpty,
                                   creators: store.creators.filter { store.selectedCreators.contains($0) },
@@ -93,6 +90,7 @@ struct ContentView: View {
             }
             .frame(minHeight: minHeight)
         }
+        .scrollClipDisabled(highlighted != nil)
         .scrollBounceBehavior(.always)
     }
     private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil }

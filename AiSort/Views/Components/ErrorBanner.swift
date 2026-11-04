@@ -12,7 +12,7 @@ struct ErrorBanner: View {
             if canRetry {
                 Button("重试", action: retry).fontWeight(.semibold)
             }
-        }.font(.caption).foregroundStyle(Color(red: 0.55, green: 0.30, blue: 0.08))
+        }.font(.appCaption).foregroundStyle(Color(red: 0.55, green: 0.30, blue: 0.08))
             .padding(12).background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 }

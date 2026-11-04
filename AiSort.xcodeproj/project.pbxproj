@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2B06D759309B3FE600E22800 /* LayerLens in Frameworks */ = {isa = PBXBuildFile; productRef = 2B06D758309B3FE600E22800 /* LayerLens */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2B06D68E309AE19D00E22800 /* AiSort.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AiSort.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2B06D759309B3FE600E22800 /* LayerLens in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = AiSort;
 			packageProductDependencies = (
+				2B06D758309B3FE600E22800 /* LayerLens */,
 			);
 			productName = AiSort;
 			productReference = 2B06D68E309AE19D00E22800 /* AiSort.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 2B06D685309AE19D00E22800;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B06D68F309AE19D00E22800 /* Products */;
 			projectDirPath = "";
@@ -353,6 +362,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/amjunliang/LayerLens.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2B06D758309B3FE600E22800 /* LayerLens */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */;
+			productName = LayerLens;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2B06D686309AE19D00E22800 /* Project object */;
 }

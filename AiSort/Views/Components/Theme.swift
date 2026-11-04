@@ -3,6 +3,14 @@ import SwiftUI
 let ink = Color(red: 0.10, green: 0.16, blue: 0.22)
 let teal = Color(red: 0.10, green: 0.43, blue: 0.42)
 private let palette: [Color] = [.init(red: 0.13, green: 0.49, blue: 0.46), .init(red: 0.88, green: 0.48, blue: 0.30), .init(red: 0.37, green: 0.47, blue: 0.71), .init(red: 0.73, green: 0.58, blue: 0.27), .init(red: 0.61, green: 0.40, blue: 0.57), .init(red: 0.35, green: 0.61, blue: 0.66), .init(red: 0.66, green: 0.48, blue: 0.39), .init(red: 0.54, green: 0.60, blue: 0.36)]
+
+extension Font {
+    static var appBody: Font { .system(size: 14) }
+    static var appSubheadline: Font { .system(size: 15) }
+    static var appCaption: Font { .system(size: 14) }
+    static var appCaption2: Font { .system(size: 14) }
+}
+
 func creatorColor(_ name: String) -> Color {
     // Approximate the colors visible on Artificial Analysis; the API does not provide colors.
     let known: [String: Color] = [

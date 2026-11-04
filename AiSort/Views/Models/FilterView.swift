@@ -29,7 +29,7 @@ struct FilterView: View {
 
                 HStack {
                     Text("已选择 \(store.selectedCreators.count) / \(store.creators.count)")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.appSubheadline).foregroundStyle(.secondary)
                     Spacer()
                     Button("全选") { store.selectAll() }
                         .disabled(store.creators.isEmpty || store.selectedCreators.count == store.creators.count)

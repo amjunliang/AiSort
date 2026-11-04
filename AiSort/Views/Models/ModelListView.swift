@@ -16,10 +16,10 @@ struct ModelListView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("模型列表").font(.title3.bold()).foregroundStyle(ink)
-                    Text("查看全部数据，包括指标尚不完整的模型").font(.caption).foregroundStyle(.secondary)
+                    Text("查看全部数据，包括指标尚不完整的模型").font(.appCaption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(visibleModels.count)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                Text("\(visibleModels.count)").font(.appSubheadline.monospacedDigit()).foregroundStyle(.secondary)
             }
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -27,7 +27,7 @@ struct ModelListView: View {
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
             }.padding(10).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
             HStack {
-                Text("排序方式").font(.caption).foregroundStyle(.secondary)
+                Text("排序方式").font(.appCaption).foregroundStyle(.secondary)
                 Spacer()
                 Picker("排序方式", selection: $sort) {
                     ForEach(ModelSort.allCases) { option in Text(option.rawValue).tag(option) }
