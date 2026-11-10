@@ -10,12 +10,16 @@ final class ModelController: ObservableObject {
     @Published var error: String?
     @Published var hasKey = Keychain.read() != nil
     @Published var selectedCreators: Set<String> = []
+    @Published private(set) var canvasResetVersion = 0
     private var allSelected: Bool
+    private var didRefreshOnLaunch = false
+    private var isSilentRefresh = false
     private let filterKey = "creatorFilterSelection"
     private var generation = 0
     private let api: ModelAPI
     private let cacheStore: ModelCacheStore
     private let defaults: UserDefaults
+    var showsLoadingIndicator: Bool { isLoading && !isSilentRefresh }
     var creators: [String] { Array(Set(models.map { $0.modelCreator.name })).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
     var filtered: [AIModel] { models.filter { selectedCreators.contains($0.modelCreator.name) } }
     init(api: ModelAPI? = nil, cacheStore: ModelCacheStore? = nil, defaults: UserDefaults = .standard) {
@@ -36,12 +40,13 @@ final class ModelController: ObservableObject {
         defaults.set(allSelected, forKey: "creatorFilterAll")
         if !allSelected { defaults.set(Array(selectedCreators), forKey: filterKey) }
     }
-    func selectAll() { allSelected = true; selectedCreators = Set(creators); saveFilter() }
-    func clearSelection() { allSelected = false; selectedCreators = []; saveFilter() }
+    func selectAll() { allSelected = true; selectedCreators = Set(creators); saveFilter(); canvasResetVersion += 1 }
+    func clearSelection() { allSelected = false; selectedCreators = []; saveFilter(); canvasResetVersion += 1 }
     func toggleCreator(_ creator: String) {
         if selectedCreators.contains(creator) { selectedCreators.remove(creator) } else { selectedCreators.insert(creator) }
         allSelected = Set(creators).isSubset(of: selectedCreators) && !creators.isEmpty
         saveFilter()
+        canvasResetVersion += 1
     }
     func saveKey(_ value: String) async {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,10 +56,16 @@ final class ModelController: ObservableObject {
     func deleteKey() {
         do { try Keychain.delete(); generation += 1; isLoading = false; hasKey = false; error = nil } catch { self.error = error.localizedDescription }
     }
-    func refresh() async {
+    func refreshOnLaunch() async {
+        guard !didRefreshOnLaunch, hasKey else { return }
+        didRefreshOnLaunch = true
+        await refresh(silently: updatedAt != nil)
+    }
+    func refresh(silently: Bool = false) async {
         guard !isLoading, let key = Keychain.read(), !key.isEmpty else { return }
         generation += 1
         let requestGeneration = generation
+        isSilentRefresh = silently
         isLoading = true
         error = nil
         defer { if generation == requestGeneration { isLoading = false } }
@@ -68,11 +79,14 @@ final class ModelController: ObservableObject {
                 selectedCreators.formIntersection(creators)
                 saveFilter()
             }
+            if !silently { canvasResetVersion += 1 }
             do {
                 try cacheStore.save(cache)
-            } catch { self.error = "数据已更新，但无法保存离线缓存。" }
+            } catch {
+                if !silently { self.error = "数据已更新，但无法保存离线缓存。" }
+            }
         } catch {
-            guard generation == requestGeneration else { return }
+            guard generation == requestGeneration, !silently, !Task.isCancelled, !(error is CancellationError) else { return }
             if error is DecodingError { self.error = "数据格式无法解析，请稍后重试。" }
             else if let failure = error as? ModelAPI.FetchError { self.error = failure.localizedDescription }
             else { self.error = "网络连接失败，请检查网络后重试。" }

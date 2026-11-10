@@ -3,6 +3,7 @@ import SwiftUI
 struct ChartCanvas: View {
     private let chartPadding: CGFloat = 20
     let models: [AIModel]
+    let scaleModels: [AIModel]
     @Binding var highlighted: AIModel?
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
@@ -13,13 +14,13 @@ struct ChartCanvas: View {
     private var labelPanAllowance: CGFloat {
         guard scale >= 1.5 else { return 0 }
         // Reserve enough room for a full model name and the bubble beside it.
-        return CGFloat(models.map { $0.name.count }.max() ?? 0) * 14 + 40
+        return CGFloat(scaleModels.map { $0.name.count }.max() ?? 0) * 14 + 40
     }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                BubbleChart(models: models, highlighted: $highlighted,
+                BubbleChart(models: models, scaleModels: scaleModels, highlighted: $highlighted,
                             focusRequest: $focusRequest, offset: $offset, scale: scale,
                             viewportSize: geometry.size,
                             extraHorizontalPan: labelPanAllowance,
@@ -63,7 +64,7 @@ struct ChartCanvas: View {
 
     private func bounded(_ value: CGSize, size: CGSize, scale: CGFloat) -> CGSize {
         let x = size.width * (scale - 1) / 2, y = size.height * (scale - 1) / 2
-        let extra = scale >= 1.5 ? CGFloat(models.map { $0.name.count }.max() ?? 0) * 14 + 40 : 0
+        let extra = scale >= 1.5 ? CGFloat(scaleModels.map { $0.name.count }.max() ?? 0) * 14 + 40 : 0
         return CGSize(width: min(x, max(-x - extra, value.width)), height: min(y, max(-y, value.height)))
     }
 }

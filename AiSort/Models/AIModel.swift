@@ -1,7 +1,34 @@
 import Foundation
 
 struct AIModel: Codable, Identifiable {
-    struct Creator: Codable { let id: String; let name: String }
+    struct Creator: Codable {
+        let id: String
+        let name: String
+
+        var region: CreatorRegion? {
+            if Self.china.contains(name) { return .china }
+            if Self.outsideChina.contains(name) { return .outsideChina }
+            return nil
+        }
+
+        // Match the publisher names supplied by Artificial Analysis. New or
+        // ambiguous publishers stay unclassified until their origin is confirmed.
+        private static let china: Set<String> = [
+            "Alibaba", "Baidu", "ByteDance Seed", "China Mobile", "DeepSeek",
+            "InclusionAI", "Kimi", "KwaiKAT", "LongCat", "MiniMax", "Nanbeige",
+            "OpenBMB", "StepFun", "Tencent", "Xiaomi", "Z AI"
+        ]
+        private static let outsideChina: Set<String> = [
+            "AI21 Labs", "Allen Institute for AI", "Amazon", "Anthropic", "Arcee AI",
+            "Cohere", "Databricks", "Deep Cogito", "Google", "IBM", "Inception",
+            "Institute of Foundation Models", "Korea Telecom", "LG AI Research",
+            "Liquid AI", "Meta", "Microsoft", "Mistral", "Motif Technologies",
+            "Multiverse Computing", "NVIDIA", "Naver", "Nous Research", "OpenAI",
+            "Perplexity", "Prime Intellect", "Reflection", "Reka AI", "SK Telecom",
+            "Sarvam", "ServiceNow", "Snowflake", "SpaceXAI", "Swiss AI Initiative",
+            "TII UAE", "Thinking Machines", "Trillion Labs", "Upstage"
+        ]
+    }
     struct Evaluations: Codable { let artificialAnalysisIntelligenceIndex: Double? }
     struct Pricing: Codable {
         let price1mInputTokens: Double?
@@ -32,6 +59,16 @@ struct AIModel: Codable, Identifiable {
     }
     // log(1 + cost) retains zero and compresses the wide range of prices.
     var chartCost: Double { log10(1 + (cost ?? 0)) }
+}
+
+enum CreatorRegion: String, CaseIterable {
+    case all = "全部"
+    case china = "中国"
+    case outsideChina = "非中国"
+
+    func includes(_ creator: AIModel.Creator) -> Bool {
+        self == .all || creator.region == self
+    }
 }
 
 struct APIPage: Decodable {

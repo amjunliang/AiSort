@@ -22,7 +22,7 @@ struct SettingsView: View {
                     if store.hasKey { Button("删除已保存的密钥", role: .destructive) { store.deleteKey(); key = "" } }
                 }
                 if let error = store.error { Section { Text(error).foregroundStyle(.orange) } }
-                if store.isLoading { ProgressView("正在获取模型数据…") }
+                if store.showsLoadingIndicator { ProgressView("正在获取模型数据…") }
             }.formStyle(.grouped).navigationTitle("设置")
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.frame(minWidth: 320, minHeight: 400)

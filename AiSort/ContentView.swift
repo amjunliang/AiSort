@@ -9,12 +9,16 @@ struct ContentView: View {
     @State private var search = ""
     @State private var highlighted: AIModel?
     @State private var sort = ModelSort.intelligence
+    @State private var showsChinaOnly = false
     @State private var showModels = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var focusRequest: String?
 
-    private var plotted: [AIModel] { store.filtered.filter(\.isPlottable) }
+    private var visibleModels: [AIModel] {
+        showsChinaOnly ? store.filtered.filter { CreatorRegion.china.includes($0.modelCreator) } : store.filtered
+    }
+    private var plotted: [AIModel] { visibleModels.filter(\.isPlottable) }
 
     var body: some View {
         NavigationStack {
@@ -24,14 +28,17 @@ struct ContentView: View {
                 GeometryReader { geometry in
                     if store.hasKey {
                         scrollContent(minHeight: geometry.size.height)
-                            .refreshable { await store.refresh() }
+                            .refreshable {
+                                let request = Task { await store.refresh() }
+                                await request.value
+                            }
                     } else {
                         scrollContent(minHeight: geometry.size.height)
                     }
                 }
                 if store.updatedAt != nil {
                     ChartControls(hasModels: !plotted.isEmpty,
-                                  creators: store.creators.filter { store.selectedCreators.contains($0) },
+                                  creators: Set(visibleModels.map(\.modelCreator.name)).sorted { $0.localizedStandardCompare($1) == .orderedAscending },
                                   scale: $scale, offset: $offset, resetCanvas: resetCanvas)
                         .background(Color(red: 0.965, green: 0.972, blue: 0.962))
                         .zIndex(1)
@@ -47,7 +54,7 @@ struct ContentView: View {
             }) {
                 NavigationStack {
                     ScrollView {
-                        ModelListView(models: store.filtered, search: $search, sort: $sort, selectModel: selectModel)
+                        ModelListView(models: visibleModels, search: $search, sort: $sort, selectModel: selectModel)
                             .padding()
                     }
                         .navigationTitle("模型列表")
@@ -55,9 +62,15 @@ struct ContentView: View {
                 }.frame(minWidth: 320, minHeight: 400)
             }
             .sheet(item: $selected) { ModelDetail(model: $0, version: store.indexVersion) }
-            .onChange(of: store.selectedCreators) { _, _ in resetCanvas() }
-            .onChange(of: store.updatedAt) { _, _ in resetCanvas() }
-            .task { if store.hasKey && store.updatedAt == nil { await store.refresh() } }
+            .onChange(of: store.canvasResetVersion) { _, _ in resetCanvas() }
+            .onChange(of: showsChinaOnly) { _, _ in
+                highlighted = nil
+                focusRequest = nil
+            }
+            .task {
+                let request = Task { await store.refreshOnLaunch() }
+                await request.value
+            }
         }.tint(teal).font(.appBody).preferredColorScheme(.light)
     }
 
@@ -68,21 +81,23 @@ struct ContentView: View {
                     ErrorBanner(text: error, canRetry: store.hasKey && !store.isLoading, retry: refresh).padding(.horizontal, 16).padding(.top, 10)
                 }
                 if store.updatedAt != nil {
-                    OverviewHeader(count: plotted.count, updatedAt: store.updatedAt)
+                    OverviewHeader(count: visibleModels.count, updatedAt: store.updatedAt,
+                                   showsChinaOnly: $showsChinaOnly)
                     if plotted.isEmpty {
                         ContentUnavailableView {
                             Label("暂无可绘制的模型", systemImage: "chart.xyaxis.line")
                         } description: {
-                            Text(store.selectedCreators.isEmpty ? "选择厂商后，即可在这里比较模型。" : "当前厂商没有完整的图表指标。")
+                            Text(visibleModels.isEmpty ? "当前筛选条件下没有模型。" : "当前模型没有完整的图表指标。")
                         } actions: {
                             Button("选择厂商") { showFilters = true }.buttonStyle(.borderedProminent)
-                            if !store.selectedCreators.isEmpty {
+                            if !visibleModels.isEmpty {
                                 Button("查看模型列表") { showModels = true }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        ChartCanvas(models: plotted, highlighted: $highlighted, focusRequest: $focusRequest,
+                        ChartCanvas(models: plotted, scaleModels: store.filtered.filter(\.isPlottable),
+                                    highlighted: $highlighted, focusRequest: $focusRequest,
                                     offset: $offset, scale: $scale, showDetail: { selected = $0 })
                             .frame(minHeight: max(280, minHeight * 0.5))
                     }
@@ -97,6 +112,7 @@ struct ContentView: View {
         .scrollClipDisabled(highlighted != nil)
         .scrollBounceBehavior(.always)
     }
+
     private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil }
 
     private func refresh() {

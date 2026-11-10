@@ -3,11 +3,26 @@ import SwiftUI
 struct OverviewHeader: View {
     let count: Int
     let updatedAt: Date?
+    @Binding var showsChinaOnly: Bool
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("模型全景").font(.title2.bold()).foregroundStyle(ink)
+                HStack(spacing: 8) {
+                    Text("模型全景").font(.title2.bold()).foregroundStyle(ink)
+                    Button {
+                        showsChinaOnly.toggle()
+                    } label: {
+                        Text("只看中国")
+                            .font(.appCaption.weight(.semibold))
+                            .foregroundStyle(showsChinaOnly ? .white : teal)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(showsChinaOnly ? teal : teal.opacity(0.09), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(showsChinaOnly ? .isSelected : [])
+                }
                 Text("左上角代表更高智力、更低成本")
                     .font(.appCaption).foregroundStyle(.secondary)
             }

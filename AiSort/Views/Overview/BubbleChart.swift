@@ -9,6 +9,7 @@ import UIKit
 
 struct BubbleChart: View {
     let models: [AIModel]
+    let scaleModels: [AIModel]
     @Binding var highlighted: AIModel?
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
@@ -19,9 +20,9 @@ struct BubbleChart: View {
     let showDetail: (AIModel) -> Void
     @State private var labelOffsets: [String: CGSize] = [:]
     @State private var hoveredModelID: String?
-    private var maxX: Double { max(0.1, (models.map(\.chartCost).max() ?? 0) * 1.08) }
+    private var maxX: Double { max(0.1, (scaleModels.map(\.chartCost).max() ?? 0) * 1.08) }
     private var yBounds: ClosedRange<Double> {
-        let values = models.compactMap(\.intelligence)
+        let values = scaleModels.compactMap(\.intelligence)
         let low = values.min() ?? 0, high = values.max() ?? 1
         let height = max(viewportSize.height - 80, 80)
         let padding = max((high - low) * max(0.03, Double(24 / height)), 1)
@@ -41,7 +42,7 @@ struct BubbleChart: View {
     private var visibleYBounds: ClosedRange<Double> {
         visibleBounds(yBounds, offset: offset.height, axisLength: viewportSize.height, inverted: false)
     }
-    private var maxSpeed: Double { max(models.compactMap(\.speed).max() ?? 1, 1) }
+    private var maxSpeed: Double { max(scaleModels.compactMap(\.speed).max() ?? 1, 1) }
     private var featuredModelIDs: Set<String> {
         let ordered = models.sorted { $0.id < $1.id }
         let smartest = ordered.max { ($0.intelligence ?? -.infinity) < ($1.intelligence ?? -.infinity) }
@@ -253,6 +254,7 @@ struct BubbleChart: View {
             return label
         }
         let layoutKey = LabelLayoutKey(plotRect: plotRect, offset: offset, scale: scale,
+                                       xBounds: visibleXBounds, yBounds: visibleYBounds, maxSpeed: maxSpeed,
                                        interacting: isInteracting,
                                        models: models.map { "\($0.id):\($0.chartCost):\($0.intelligence ?? 0):\($0.speed ?? 0):\($0.name)" })
         return ZStack(alignment: .topLeading) {
@@ -478,6 +480,9 @@ private struct LabelLayoutKey: Equatable {
     let plotRect: CGRect
     let offset: CGSize
     let scale: CGFloat
+    let xBounds: ClosedRange<Double>
+    let yBounds: ClosedRange<Double>
+    let maxSpeed: Double
     let interacting: Bool
     let models: [String]
 }

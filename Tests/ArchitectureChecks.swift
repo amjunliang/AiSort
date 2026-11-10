@@ -35,6 +35,11 @@ struct ArchitectureChecks {
         let incomplete = model("Gamma", creator: "Google", score: nil, input: 0, output: 0, speed: 1)
         require(first.cost == 3, "3:1 price calculation changed")
         require(first.isPlottable && !incomplete.isPlottable, "Plot eligibility changed")
+        let chinese = AIModel.Creator(id: "alibaba", name: "Alibaba")
+        let unknown = AIModel.Creator(id: "unknown", name: "Unknown")
+        require(CreatorRegion.china.includes(chinese) && !CreatorRegion.outsideChina.includes(chinese), "Chinese publisher misclassified")
+        require(CreatorRegion.outsideChina.includes(first.modelCreator) && !CreatorRegion.china.includes(first.modelCreator), "Non-Chinese publisher misclassified")
+        require(CreatorRegion.all.includes(unknown) && !CreatorRegion.china.includes(unknown) && !CreatorRegion.outsideChina.includes(unknown), "Unknown publisher should appear only in All")
         require([second, first, incomplete].sorted(by: ModelSort.intelligence.precedes).map(\.name) == ["Alpha", "Beta", "Gamma"], "Intelligence ordering changed")
         require([first, second].sorted(by: ModelSort.cost.precedes).map(\.name) == ["Beta", "Alpha"], "Cost ordering changed")
         require([first, second].sorted(by: ModelSort.speed.precedes).map(\.name) == ["Beta", "Alpha"], "Speed ordering changed")
@@ -78,6 +83,19 @@ struct ArchitectureChecks {
         }
         let fetched = try await api.fetchModels(key: "test-key")
         require(fetched.models.map(\.name) == ["Alpha", "Beta"], "API pagination changed")
+        StubProtocol.handler = { _ in throw URLError(.cancelled) }
+        do {
+            _ = try await api.fetchModels(key: "test-key")
+            fatalError("Cancelled request should throw")
+        } catch is CancellationError {}
+        StubProtocol.handler = { _ in throw URLError(.timedOut) }
+        do {
+            _ = try await api.fetchModels(key: "test-key")
+            fatalError("Timed-out request should throw")
+        } catch let error as ModelAPI.FetchError {
+            require(error.localizedDescription.contains("第 1 页"), "Failed page missing")
+            require(error.localizedDescription.contains("-1001"), "Network error code missing")
+        }
         StubProtocol.handler = { _ in (401, Data()) }
         do {
             _ = try await api.fetchModels(key: "test-key")

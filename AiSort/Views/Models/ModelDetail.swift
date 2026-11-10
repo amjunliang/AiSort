@@ -11,6 +11,10 @@ struct ModelDetail: View {
                     HStack {
                         Circle().fill(creatorColor(model.modelCreator.name)).frame(width: 12, height: 12)
                         Text(model.modelCreator.name).font(.appSubheadline.weight(.medium)).foregroundStyle(.secondary)
+                        Text(model.modelCreator.region?.rawValue ?? "未分类")
+                            .font(.appCaption.weight(.semibold)).foregroundStyle(teal)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(teal.opacity(0.09), in: Capsule())
                     }
                     Text(model.name).font(.title.bold()).foregroundStyle(ink)
                     VStack(spacing: 0) {

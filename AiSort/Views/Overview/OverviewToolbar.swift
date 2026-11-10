@@ -31,7 +31,7 @@ struct OverviewToolbar: View {
                 .accessibilityLabel("筛选厂商，已选择 \(store.selectedCreators.count) 个")
                 .help("筛选厂商")
                 Button { Task { await store.refresh() } } label: {
-                    if store.isLoading { ProgressView().controlSize(.small).frame(width: 32, height: 44) }
+                    if store.showsLoadingIndicator { ProgressView().controlSize(.small).frame(width: 32, height: 44) }
                     else { Image(systemName: "arrow.clockwise").frame(width: 32, height: 44) }
                 }.disabled(!store.hasKey || store.isLoading)
                     .accessibilityLabel("刷新数据").help("刷新数据")
