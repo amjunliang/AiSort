@@ -13,7 +13,18 @@ struct ModelAPI {
         self.session = session
     }
 
+    /// 刷新过程中观察到的额度信息；即使请求失败也会保留已读到的值。
+    struct FetchMetrics {
+        var rateLimit: RateLimit?
+        var totalPages: Int?
+    }
+
     func fetchModels(key: String) async throws -> ModelCache {
+        var metrics = FetchMetrics()
+        return try await fetchModels(key: key, metrics: &metrics)
+    }
+
+    func fetchModels(key: String, metrics: inout FetchMetrics) async throws -> ModelCache {
         let refreshID = UUID().uuidString
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -50,11 +61,13 @@ struct ModelAPI {
                 Self.log("refresh=\(refreshID) page=\(page) non-HTTP response elapsed_ms=\(elapsedMs)", level: .error)
                 throw FetchError.message("服务器响应无效。")
             }
-            Self.log("refresh=\(refreshID) page=\(page) status=\(http.statusCode) elapsed_ms=\(elapsedMs) bytes=\(data.count)")
+            let rateLimit = RateLimit(response: http)
+            if let rateLimit { metrics.rateLimit = rateLimit }
+            Self.log("refresh=\(refreshID) page=\(page) status=\(http.statusCode) elapsed_ms=\(elapsedMs) bytes=\(data.count) quota_remaining=\(rateLimit.map { String($0.remaining) } ?? "-")")
             switch http.statusCode {
             case 200: break
             case 401, 403: throw FetchError.message("API Key 无效或无权访问，请检查设置。")
-            case 429: throw FetchError.message("请求过于频繁，请稍后重试。")
+            case 429: throw FetchError.rateLimited(resetAt: rateLimit?.resetAt)
             default: throw FetchError.message("服务器返回错误（\(http.statusCode)），请稍后重试。")
             }
             let result: APIPage
@@ -69,6 +82,7 @@ struct ModelAPI {
                 Self.log("refresh=\(refreshID) page=\(page) invalid pagination response_page=\(pagination.page) total_pages=\(pagination.totalPages) has_more=\(pagination.hasMore)", level: .error)
                 throw FetchError.message("服务器分页数据无效。")
             }
+            metrics.totalPages = pagination.totalPages
             items.append(contentsOf: result.data)
             version = result.intelligenceIndexVersion
             if !pagination.hasMore { break }
@@ -87,9 +101,14 @@ struct ModelAPI {
 
     enum FetchError: LocalizedError {
         case message(String)
+        case rateLimited(resetAt: Date?)
         var errorDescription: String? {
-            if case .message(let text) = self { return text }
-            return nil
+            switch self {
+            case .message(let text): return text
+            case .rateLimited(let resetAt):
+                guard let resetAt else { return "今日 API 额度已用完，请稍后重试。" }
+                return "今日 API 额度已用完，将于 \(RefreshPolicy.format(resetAt, now: Date())) 重置。"
+            }
         }
     }
 }

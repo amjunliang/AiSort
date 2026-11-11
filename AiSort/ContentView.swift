@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var store = ModelController()
+    @ObservedObject var store: ModelController
     @State private var showSettings = false
     @State private var showFilters = false
     @State private var selected: AIModel?
@@ -78,10 +78,17 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if let error = store.error {
-                    ErrorBanner(text: error, canRetry: store.hasKey && !store.isLoading, retry: refresh).padding(.horizontal, 16).padding(.top, 10)
+                    ErrorBanner(text: error, canRetry: store.canRetry, retry: refresh).padding(.horizontal, 16).padding(.top, 10)
+                }
+                if let notice = store.notice {
+                    RefreshNoticeBanner(text: notice, remaining: store.remainingQuotaText,
+                                        canUpdate: store.hasKey && !store.isLoading,
+                                        update: { Task { await store.forceRefresh() } },
+                                        dismiss: store.dismissNotice)
+                        .padding(.horizontal, 16).padding(.top, 10)
                 }
                 if store.updatedAt != nil {
-                    OverviewHeader(count: visibleModels.count, updatedAt: store.updatedAt,
+                    OverviewHeader(count: visibleModels.count, updatedAt: store.updatedAt, rateLimit: store.activeRateLimit,
                                    showsChinaOnly: $showsChinaOnly)
                     if plotted.isEmpty {
                         ContentUnavailableView {

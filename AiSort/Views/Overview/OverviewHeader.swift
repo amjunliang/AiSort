@@ -3,6 +3,7 @@ import SwiftUI
 struct OverviewHeader: View {
     let count: Int
     let updatedAt: Date?
+    let rateLimit: RateLimit?
     @Binding var showsChinaOnly: Bool
 
     var body: some View {
@@ -39,6 +40,12 @@ struct OverviewHeader: View {
                     }
                     .font(.appCaption2).foregroundStyle(.secondary)
                     .lineLimit(1)
+                }
+                if let rateLimit {
+                    Text(rateLimit.limit.map { "额度 \(rateLimit.remaining)/\($0)" } ?? "额度剩余 \(rateLimit.remaining)")
+                        .font(.appCaption2).foregroundStyle(rateLimit.remaining < 10 ? Color.orange : .secondary)
+                        .lineLimit(1)
+                        .help("Artificial Analysis 免费额度，\(RefreshPolicy.format(rateLimit.resetAt, now: Date())) 重置")
                 }
             }
         }.padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 12)
