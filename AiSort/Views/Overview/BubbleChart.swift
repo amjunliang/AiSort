@@ -208,7 +208,7 @@ struct BubbleChart: View {
     private func selectionBubble(for model: AIModel, anchor: CGPoint, size: CGSize, spaceAbove: CGFloat) -> some View {
         let width = min(320, max(148, size.width - 24))
         let showsName = width >= 190 && size.width >= 280 && size.height >= 220
-        let height: CGFloat = showsName ? 138 : 86
+        let height = ModelBubble.height(showsName: showsName)
         let radius = sqrt(28 + 650 * (model.speed ?? 0) / maxSpeed) / 2
         let placement = BubblePlacement.place(size: CGSize(width: width, height: height),
                                               at: CGPoint(x: anchor.x, y: anchor.y + spaceAbove),

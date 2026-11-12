@@ -29,23 +29,55 @@ struct AIModel: Codable, Identifiable {
             "TII UAE", "Thinking Machines", "Trillion Labs", "Upstage"
         ]
     }
-    struct Evaluations: Codable { let artificialAnalysisIntelligenceIndex: Double? }
+    struct Evaluations: Codable {
+        let artificialAnalysisIntelligenceIndex: Double?
+        var artificialAnalysisCodingIndex: Double?
+        var artificialAnalysisAgenticIndex: Double?
+        var artificialAnalysisFinanceAndAccountingIndex: Double?
+        var artificialAnalysisStrategyAndOpsIndex: Double?
+        var artificialAnalysisLegalIndex: Double?
+        var artificialAnalysisHealthcareAndMedicalIndex: Double?
+        var artificialAnalysisEngineeringIndex: Double?
+        var artificialAnalysisEconomicsIndex: Double?
+    }
     struct Pricing: Codable {
         let price1mInputTokens: Double?
         let price1mOutputTokens: Double?
+        var price1mCacheHitTokens: Double?
+        var price1mCacheWriteTokens: Double?
         enum CodingKeys: String, CodingKey {
             case price1mInputTokens = "price1MInputTokens"
             case price1mOutputTokens = "price1MOutputTokens"
+            case price1mCacheHitTokens = "price1MCacheHitTokens"
+            case price1mCacheWriteTokens = "price1MCacheWriteTokens"
         }
     }
-    struct Performance: Codable { let medianOutputTokensPerSecond: Double? }
+    struct Performance: Codable {
+        let medianOutputTokensPerSecond: Double?
+        var medianTimeToFirstTokenSeconds: Double?
+        var medianTimeToFirstAnswerTokenSeconds: Double?
+        var medianEndToEndResponseTimeSeconds: Double?
+    }
+    struct PerformanceV3: Codable {
+        let meanOutputTokensPerSecond: Double?
+        let meanTimeToFirstTokenSeconds: Double?
+        let meanTimeToFirstAnswerTokenSeconds: Double?
+    }
+    struct IntelligenceIndexCost: Codable {
+        struct CostPerTask: Codable { let totalCost: Double? }
+        let totalCost: Double?
+        let costPerTask: CostPerTask?
+    }
     let id: String
     let name: String
     let slug: String
+    let releaseDate: String?
     let modelCreator: Creator
     let evaluations: Evaluations
     let pricing: Pricing
     let performance: Performance
+    var performanceV3: PerformanceV3?
+    var artificialAnalysisIntelligenceIndexCost: IntelligenceIndexCost?
 
     var intelligence: Double? { evaluations.artificialAnalysisIntelligenceIndex }
     var speed: Double? { performance.medianOutputTokensPerSecond }

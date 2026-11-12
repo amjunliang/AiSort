@@ -101,7 +101,7 @@
 			mainGroup = 2B06D685309AE19D00E22800;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */,
+				2B06D757309B3FE600E22800 /* XCLocalSwiftPackageReference "LayerLens" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B06D68F309AE19D00E22800 /* Products */;
@@ -363,21 +363,17 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/amjunliang/LayerLens.git";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		2B06D757309B3FE600E22800 /* XCLocalSwiftPackageReference "LayerLens" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../LayerLens;
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		2B06D758309B3FE600E22800 /* LayerLens */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 2B06D757309B3FE600E22800 /* XCRemoteSwiftPackageReference "LayerLens" */;
+			package = 2B06D757309B3FE600E22800 /* XCLocalSwiftPackageReference "LayerLens" */;
 			productName = LayerLens;
 		};
 /* End XCSwiftPackageProductDependency section */

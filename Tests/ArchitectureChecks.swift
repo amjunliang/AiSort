@@ -1,7 +1,7 @@
 import Foundation
 
 private func model(_ name: String, creator: String, score: Double?, input: Double?, output: Double?, speed: Double?) -> AIModel {
-    AIModel(id: name, name: name, slug: name, modelCreator: .init(id: creator, name: creator),
+    AIModel(id: name, name: name, slug: name, releaseDate: nil, modelCreator: .init(id: creator, name: creator),
             evaluations: .init(artificialAnalysisIntelligenceIndex: score),
             pricing: .init(price1mInputTokens: input, price1mOutputTokens: output),
             performance: .init(medianOutputTokensPerSecond: speed))
@@ -75,7 +75,8 @@ struct ArchitectureChecks {
             require(request.value(forHTTPHeaderField: "x-api-key") == "test-key", "API key header missing")
             let page = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first!.value!
             let item = page == "1" ? first : second
-            let jsonItem = try JSONSerialization.jsonObject(with: JSONEncoder().encode(item))
+            var jsonItem = try JSONSerialization.jsonObject(with: JSONEncoder().encode(item)) as! [String: Any]
+            if page == "1" { jsonItem["release_date"] = "2025-08-11" }
             let response: [String: Any] = [
                 "pagination": ["page": Int(page)!, "total_pages": 2, "has_more": page == "1"],
                 "data": [jsonItem], "intelligence_index_version": 4
@@ -84,6 +85,10 @@ struct ArchitectureChecks {
         }
         let fetched = try await api.fetchModels(key: "test-key")
         require(fetched.models.map(\.name) == ["Alpha", "Beta"], "API pagination changed")
+        require(fetched.models.map(\.releaseDate) == ["2025-08-11", nil], "Release dates should decode when present")
+        let releaseDateCache = ModelCacheStore(url: directory.appendingPathComponent("release-dates.json"))
+        try releaseDateCache.save(fetched)
+        require(releaseDateCache.load()?.models.map(\.releaseDate) == ["2025-08-11", nil], "Release dates should survive cache round trip")
         StubProtocol.handler = { _ in throw URLError(.cancelled) }
         do {
             _ = try await api.fetchModels(key: "test-key")

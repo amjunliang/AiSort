@@ -9,13 +9,17 @@ struct ModelBubble: View {
     let showDetail: () -> Void
     let dismiss: () -> Void
 
-    private let tailSize = CGSize(width: 22, height: 11)
+    private static let tailSize = CGSize(width: 22, height: 11)
+
+    static func height(showsName: Bool) -> CGFloat {
+        (showsName ? 149 : 97) + tailSize.height
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if pointsUp { tailRow }
 
-            VStack(alignment: .leading, spacing: showsName ? 9 : 0) {
+            VStack(alignment: .leading, spacing: showsName ? 9 : 4) {
                 if showsName {
                     HStack(spacing: 7) {
                         Circle()
@@ -60,19 +64,25 @@ struct ModelBubble: View {
                         .accessibilityLabel("关闭模型信息")
                     }
                 }
+                Text("发布日期 \(model.releaseDate.flatMap { $0.isEmpty ? nil : $0 } ?? "暂无数据")")
+                    .font(.appCaption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
-            .frame(width: width, height: showsName ? 127 : 75)
+            .frame(width: width, height: Self.height(showsName: showsName) - Self.tailSize.height)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: showDetail)
 
             if !pointsUp { tailRow }
         }
         .frame(width: width)
         .background {
-            BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: tailSize)
+            BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: Self.tailSize)
                 .fill(.white)
                 .overlay {
-                    BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: tailSize)
+                    BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: Self.tailSize)
                         .stroke(teal.opacity(0.2), lineWidth: 1)
                 }
         }
@@ -84,7 +94,7 @@ struct ModelBubble: View {
     }
 
     private var tailRow: some View {
-        Color.clear.frame(width: width, height: tailSize.height)
+        Color.clear.frame(width: width, height: Self.tailSize.height)
     }
 
     private func compactMetric(_ title: String, _ value: String) -> some View {
