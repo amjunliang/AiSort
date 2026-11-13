@@ -8,6 +8,7 @@ struct ChartCanvas: View {
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
     @Binding var scale: CGFloat
+    @Binding var isZooming: Bool
     let showDetail: (AIModel) -> Void
     @State private var dragOrigin: CGSize?
     @State private var zoomOrigin: (CGFloat, CGSize)?
@@ -30,7 +31,7 @@ struct ChartCanvas: View {
                     .padding(.horizontal, 6)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .contentShape(Rectangle())
-                    .highPriorityGesture(scale > 1 ? DragGesture(minimumDistance: 10)
+                    .simultaneousGesture(scale > 1 ? DragGesture(minimumDistance: 10)
                         .onChanged { value in
                             guard zoomOrigin == nil else { return }
                             if dragOrigin == nil { dragOrigin = offset }
@@ -38,9 +39,13 @@ struct ChartCanvas: View {
                                 offset = bounded(CGSize(width: start.width + value.translation.width, height: start.height + value.translation.height), size: geometry.size, scale: scale)
                             }
                         }.onEnded { _ in dragOrigin = nil } : nil)
-                    .simultaneousGesture(MagnifyGesture()
+                    .highPriorityGesture(MagnifyGesture(minimumScaleDelta: 0.01)
                         .onChanged { value in
-                            if zoomOrigin == nil { zoomOrigin = (scale, offset); dragOrigin = nil }
+                            if zoomOrigin == nil {
+                                zoomOrigin = (scale, offset)
+                                dragOrigin = nil
+                                isZooming = true
+                            }
                             guard let start = zoomOrigin else { return }
                             let next = min(5, max(1, start.0 * value.magnification))
                             let anchor = CGPoint(x: (value.startAnchor.x - 0.5) * geometry.size.width, y: (value.startAnchor.y - 0.5) * geometry.size.height)
@@ -48,7 +53,11 @@ struct ChartCanvas: View {
                             let proposed = CGSize(width: anchor.x - (anchor.x - start.1.width) * ratio, height: anchor.y - (anchor.y - start.1.height) * ratio)
                             offset = bounded(proposed, size: geometry.size, scale: next)
                             scale = next
-                        }.onEnded { _ in zoomOrigin = nil; dragOrigin = nil })
+                        }.onEnded { _ in
+                            zoomOrigin = nil
+                            dragOrigin = nil
+                            isZooming = false
+                        })
 
                 TrackpadPanReader(isEnabled: scale > 1) { delta in
                     offset = bounded(CGSize(width: offset.width + delta.width,

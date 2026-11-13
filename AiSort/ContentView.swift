@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showModels = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
+    @State private var isChartZooming = false
     @State private var focusRequest: String?
 
     private var visibleModels: [AIModel] {
@@ -105,7 +106,8 @@ struct ContentView: View {
                     } else {
                         ChartCanvas(models: plotted, scaleModels: store.filtered.filter(\.isPlottable),
                                     highlighted: $highlighted, focusRequest: $focusRequest,
-                                    offset: $offset, scale: $scale, showDetail: { selected = $0 })
+                                    offset: $offset, scale: $scale, isZooming: $isChartZooming,
+                                    showDetail: { selected = $0 })
                             .frame(minHeight: max(280, minHeight * 0.5))
                     }
                 } else if store.isLoading {
@@ -117,7 +119,8 @@ struct ContentView: View {
             .frame(minHeight: minHeight)
         }
         .scrollClipDisabled(highlighted != nil)
-        .scrollBounceBehavior(.always)
+        .scrollDisabled(isChartZooming || scale > 1)
+        .scrollBounceBehavior(plotted.isEmpty ? .always : .basedOnSize)
     }
 
     private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil }

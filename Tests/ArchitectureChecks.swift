@@ -275,6 +275,76 @@ struct ArchitectureChecks {
             require((sparseOffsets[flashID]?.width ?? -1) > 0,
                     "Sparse pair \(flashID) has room on the right and should prefer right side")
         }
+
+        // 狭窄走廊场景下启用动态字号（12 -> 8.5），尽可能完整显示原本会因轻度越界或碰撞被丢弃的标签
+        let narrowPlotRect = CGRect(x: 165, y: 20, width: 355, height: 540)
+        func narrowPlacement(_ id: String, x: CGFloat, score: Double, r: CGFloat, w: CGFloat) -> ChartLabelPlacement {
+            let y = narrowPlotRect.minY + CGFloat(62.0 - score) * 15.2
+            return ChartLabelPlacement(id: id, name: id, radius: r, anchor: CGPoint(x: x, y: y),
+                                       frame: CGRect(x: x + r + 4, y: y - labelHeight / 2, width: w, height: labelHeight))
+        }
+        let narrowCorridor: [ChartLabelPlacement] = [
+            narrowPlacement("Gemini 4 Carbon · High", x: 260, score: 60.0, r: 9, w: 138),
+            narrowPlacement("Opus 5.5 · Max", x: 382, score: 59.0, r: 8, w: 92),
+            narrowPlacement("Gemini 4 Carbon · Med", x: 260, score: 58.3, r: 9, w: 131),
+            narrowPlacement("Opus 5.5 · XHigh", x: 382, score: 57.6, r: 8, w: 100),
+            narrowPlacement("Gemini 4 Carbon · Low", x: 350, score: 54.6, r: 9, w: 130),
+            narrowPlacement("Gemini 4 Hydrogen · XHigh", x: 280, score: 54.0, r: 12, w: 155),
+            narrowPlacement("Gemini 4 Argon · High", x: 350, score: 53.4, r: 9, w: 130),
+            narrowPlacement("GPT-6.1 Sol · Max", x: 410, score: 54.6, r: 8, w: 108),
+            narrowPlacement("Gemini 4 Hydrogen · High", x: 280, score: 50.8, r: 12, w: 148)
+        ]
+        let narrowLayouts = BubbleChart.resolveLabelLayouts(narrowCorridor, plotRect: narrowPlotRect, scale: 1.0,
+                                                              featured: ["Gemini 4 Carbon · High"])
+        require(narrowLayouts["Gemini 4 Carbon · Med"] != nil,
+                "Dynamic font sizing should keep Gemini 4 Carbon · Med visible in narrow corridor")
+        require(narrowLayouts["Gemini 4 Hydrogen · XHigh"] != nil,
+                "Dynamic font sizing should keep Gemini 4 Hydrogen · XHigh visible near plot left edge")
+        require(narrowLayouts.values.contains { $0.fontSize < 12 },
+                "Narrow corridor should shrink at least one tight label below 12pt")
+        let placedFrames: [(String, CGRect)] = narrowCorridor.compactMap { candidate in
+            guard let layout = narrowLayouts[candidate.id] else { return nil }
+            return (candidate.id, CGRect(x: candidate.anchor.x + layout.offset.width,
+                                         y: candidate.anchor.y + layout.offset.height,
+                                         width: layout.size.width, height: layout.size.height))
+        }
+        for i in 0..<placedFrames.count {
+            let (idA, rectA) = placedFrames[i]
+            require(rectA.minX >= narrowPlotRect.minX - 16 && rectA.maxX <= narrowPlotRect.maxX + 16,
+                    "Placed label \(idA) must stay within narrow plot bounds: \(rectA)")
+            for j in (i + 1)..<placedFrames.count {
+                require(!rectA.intersects(placedFrames[j].1),
+                        "Dynamic labels \(idA) and \(placedFrames[j].0) must not overlap")
+            }
+            for bubble in narrowCorridor {
+                let bubbleRect = CGRect(x: bubble.anchor.x - bubble.radius, y: bubble.anchor.y - bubble.radius,
+                                        width: bubble.radius * 2, height: bubble.radius * 2)
+                require(!rectA.intersects(bubbleRect),
+                        "Dynamic label \(idA) must not overlap bubble \(bubble.id)")
+            }
+        }
+
+        // Pareto 前沿主模型判定 + 主次标签冲突优先保留主模型字号
+        let cheapFast = model("CheapFast", creator: "Google", score: 42, input: 0.2, output: 0.6, speed: 90)
+        let cheapSlowSame = model("CheapSlowSame", creator: "OpenAI", score: 42, input: 0.2, output: 0.6, speed: 40)
+        let dominated = model("Dominated", creator: "Anthropic", score: 40, input: 1, output: 3, speed: 60)
+        let smartFrontier = model("SmartFrontier", creator: "Anthropic", score: 58, input: 2, output: 6, speed: 55)
+        let frontierIDs = BubbleChart.paretoFrontierIDs(for: [dominated, cheapSlowSame, smartFrontier, cheapFast, incomplete])
+        require(frontierIDs == Set(["CheapFast", "SmartFrontier"]),
+                "Pareto frontier should keep non-dominated fastest models, got \(frontierIDs)")
+
+        let cagedCorridor: [ChartLabelPlacement] = [
+            narrowPlacement("CageTop", x: 360, score: 51.3, r: 8, w: 60),
+            narrowPlacement("PrimaryFrontierTestLabel", x: 260, score: 50.1, r: 8, w: 165),
+            narrowPlacement("SecondaryFrontierTestLabel", x: 260, score: 49.9, r: 8, w: 165),
+            narrowPlacement("CageBottom", x: 360, score: 48.7, r: 8, w: 60)
+        ]
+        let tierLayouts = BubbleChart.resolveLabelLayouts(cagedCorridor, plotRect: narrowPlotRect, scale: 1.0,
+                                                            featured: [], primary: ["PrimaryFrontierTestLabel"])
+        require(tierLayouts["PrimaryFrontierTestLabel"]?.fontSize == 12,
+                "Primary frontier label should stay at 12pt when secondary label conflicts, got \(String(describing: tierLayouts["PrimaryFrontierTestLabel"]))")
+        require((tierLayouts["SecondaryFrontierTestLabel"]?.fontSize ?? 0) < 12,
+                "Conflicting secondary label should shrink or yield before primary frontier label")
         print("Architecture checks passed")
     }
 }

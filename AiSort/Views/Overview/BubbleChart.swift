@@ -18,9 +18,10 @@ struct BubbleChart: View {
     let extraHorizontalPan: CGFloat
     let isInteracting: Bool
     let showDetail: (AIModel) -> Void
-    @State private var labelOffsets: [String: CGSize] = [:]
+    @State private var labelLayouts: [String: ChartLabelLayout] = [:]
     @State private var hoveredModelID: String?
     private static let labelFontSize: CGFloat = 12
+    private static let labelFontSizes: [CGFloat] = [12, 10, 9, 8.5]
     private static let labelTracking: CGFloat = -0.35
     private var maxX: Double { max(0.1, (scaleModels.map(\.chartCost).max() ?? 0) * 1.08) }
     private var yBounds: ClosedRange<Double> {
@@ -45,11 +46,45 @@ struct BubbleChart: View {
         visibleBounds(yBounds, offset: offset.height, axisLength: viewportSize.height, inverted: false)
     }
     private var maxSpeed: Double { max(scaleModels.compactMap(\.speed).max() ?? 1, 1) }
+    private var visiblePlotModels: [AIModel] {
+        let xRange = visibleXBounds
+        let yRange = visibleYBounds
+        return models.filter { model in
+            guard let intelligence = model.intelligence, model.speed != nil else { return false }
+            return xRange.contains(model.chartCost) && yRange.contains(intelligence)
+        }
+    }
+    private var primaryModelIDs: Set<String> {
+        var ids = Self.paretoFrontierIDs(for: visiblePlotModels)
+        if let highlightedID = highlighted?.id { ids.insert(highlightedID) }
+        if let hoveredModelID { ids.insert(hoveredModelID) }
+        return ids
+    }
     private var featuredModelIDs: Set<String> {
         let ordered = models.sorted { $0.id < $1.id }
         let smartest = ordered.max { ($0.intelligence ?? -.infinity) < ($1.intelligence ?? -.infinity) }
         let costliest = ordered.max { ($0.cost ?? -.infinity) < ($1.cost ?? -.infinity) }
         return Set([smartest?.id, costliest?.id].compactMap { $0 })
+    }
+
+    /// Cost-intelligence Pareto frontier inside the active viewport (cheapest at each intelligence gain).
+    static func paretoFrontierIDs(for models: [AIModel]) -> Set<String> {
+        let ranked = models.compactMap { model -> (id: String, cost: Double, intelligence: Double, speed: Double)? in
+            guard let intelligence = model.intelligence, let speed = model.speed else { return nil }
+            return (model.id, model.chartCost, intelligence, speed)
+        }.sorted {
+            if $0.cost != $1.cost { return $0.cost < $1.cost }
+            if $0.intelligence != $1.intelligence { return $0.intelligence > $1.intelligence }
+            if $0.speed != $1.speed { return $0.speed > $1.speed }
+            return $0.id < $1.id
+        }
+        var bestIntelligence = -Double.infinity
+        var frontier: Set<String> = []
+        for item in ranked where item.intelligence > bestIntelligence + 1e-9 {
+            frontier.insert(item.id)
+            bestIntelligence = item.intelligence
+        }
+        return frontier
     }
     private var intelligenceTicks: [Double] {
         let lower = ceil(visibleYBounds.lowerBound), upper = floor(visibleYBounds.upperBound)
@@ -74,7 +109,7 @@ struct BubbleChart: View {
                 if let intelligence = model.intelligence, let speed = model.speed {
                     PointMark(x: .value("成本", model.chartCost), y: .value("智力指数", intelligence))
                         .symbolSize(28 + 650 * speed / maxSpeed)
-                        .foregroundStyle(creatorColor(model.modelCreator.name).opacity(0.82))
+                        .foregroundStyle(creatorColor(model.modelCreator.name).opacity(0.96))
                         .accessibilityLabel("\(model.name)，智力 \(number(intelligence))，3比1混合单价 \(dollars(model.cost)) 美元每百万 token，速度 \(number(speed))")
                 }
             }
@@ -248,10 +283,13 @@ struct BubbleChart: View {
     private func modelLabels(plotRect: CGRect) -> some View {
         let candidates = labelCandidates(plotRect: plotRect)
         let labels = candidates.compactMap { candidate -> ChartLabelPlacement? in
-            guard let offset = labelOffsets[candidate.id] else { return nil }
+            guard let layout = labelLayouts[candidate.id] else { return nil }
             var label = candidate
-            label.frame.origin = CGPoint(x: label.anchor.x + offset.width,
-                                         y: label.anchor.y + offset.height)
+            label.fontSize = layout.fontSize
+            label.frame = CGRect(x: label.anchor.x + layout.offset.width,
+                                 y: label.anchor.y + layout.offset.height,
+                                 width: layout.size.width,
+                                 height: layout.size.height)
             return label
         }
         let layoutKey = LabelLayoutKey(plotRect: plotRect, offset: offset, scale: scale,
@@ -261,13 +299,13 @@ struct BubbleChart: View {
         return ZStack(alignment: .topLeading) {
             ForEach(labels) { label in
                 leaderLine(for: label)
-                    .stroke(label.color.opacity(0.82), lineWidth: 1)
+                    .stroke(lineColor(for: label), lineWidth: lineWidth(for: label))
             }
             ForEach(labels) { label in
                 Text(label.name)
-                    .font(.system(size: Self.labelFontSize, weight: .medium))
+                    .font(.system(size: label.fontSize, weight: isPrimaryLabel(label) ? .semibold : .regular))
                     .tracking(Self.labelTracking)
-                    .foregroundStyle(label.color)
+                    .foregroundStyle(textColor(for: label))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .frame(width: label.frame.width,
@@ -285,7 +323,7 @@ struct BubbleChart: View {
             guard !isInteracting else { return }
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             guard !Task.isCancelled else { return }
-            labelOffsets = resolveLabelOffsets(candidates, plotRect: plotRect)
+            labelLayouts = resolveLabelLayouts(candidates, plotRect: plotRect)
         }
     }
 
@@ -311,6 +349,24 @@ struct BubbleChart: View {
         }
     }
 
+    private func isPrimaryLabel(_ label: ChartLabelPlacement) -> Bool {
+        primaryModelIDs.contains(label.id) || featuredModelIDs.contains(label.id)
+    }
+
+    private func textColor(for label: ChartLabelPlacement) -> Color {
+        if isPrimaryLabel(label) { return label.color.opacity(0.98) }
+        return label.color.mix(with: ink, by: 0.35).opacity(label.fontSize < Self.labelFontSize ? 0.68 : 0.74)
+    }
+
+    private func lineColor(for label: ChartLabelPlacement) -> Color {
+        if isPrimaryLabel(label) { return label.color.opacity(0.62) }
+        return label.color.mix(with: ink, by: 0.25).opacity(0.24)
+    }
+
+    private func lineWidth(for label: ChartLabelPlacement) -> CGFloat {
+        isPrimaryLabel(label) ? 1.0 : 0.75
+    }
+
     private func leaderLine(for label: ChartLabelPlacement) -> Path {
         Path { path in
             let isLeft = label.frame.maxX < label.anchor.x
@@ -319,28 +375,34 @@ struct BubbleChart: View {
             let dx = end.x - label.anchor.x, dy = end.y - label.anchor.y
             let distance = hypot(dx, dy)
             let horizontalGap = isLeft ? label.anchor.x - edgeX - label.radius : edgeX - label.anchor.x - label.radius
-            guard (abs(dy) > 1.5 || horizontalGap > 8), distance > label.radius + 2 else { return }
+            guard (abs(dy) > 4 || horizontalGap > 8), distance > label.radius + 2 else { return }
             path.move(to: CGPoint(x: label.anchor.x + dx / distance * label.radius,
                                   y: label.anchor.y + dy / distance * label.radius))
             path.addLine(to: end)
         }
     }
 
-    private func resolveLabelOffsets(_ candidates: [ChartLabelPlacement], plotRect: CGRect) -> [String: CGSize] {
-        Self.resolveLabelOffsets(candidates, plotRect: plotRect, scale: scale, featured: featuredModelIDs)
+    private func resolveLabelLayouts(_ candidates: [ChartLabelPlacement], plotRect: CGRect) -> [String: ChartLabelLayout] {
+        Self.resolveLabelLayouts(candidates, plotRect: plotRect, scale: scale,
+                                 featured: featuredModelIDs, primary: primaryModelIDs)
     }
 
-    /// Place visible labels to the left or right of their bubbles in top-to-bottom order and
-    /// distribute them holistically inside the plot viewport so leader lines never cross.
     static func resolveLabelOffsets(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
                                     scale: CGFloat, featured: Set<String>) -> [String: CGSize] {
+        resolveLabelLayouts(candidates, plotRect: plotRect, scale: scale, featured: featured).mapValues(\.offset)
+    }
+
+    /// Place visible labels to the left or right of their bubbles with dynamic font sizing
+    /// and distribute them holistically inside the plot viewport so leader lines never cross.
+    static func resolveLabelLayouts(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
+                                    scale: CGFloat, featured: Set<String>,
+                                    primary: Set<String> = []) -> [String: ChartLabelLayout] {
         let area = plotRect.insetBy(dx: -16, dy: -24)
         let hitArea = plotRect.insetBy(dx: -4, dy: -4)
         let visibleBubbles = candidates.filter { hitArea.contains($0.anchor) }
         guard let firstVisible = visibleBubbles.first else { return [:] }
-        let labelHeight = firstVisible.frame.height
-        let step = labelHeight + 2
-        let showsAllVisible = scale >= 1.5 || visibleBubbles.count <= max(40, Int(area.height / step) * 2)
+        let baseStep = firstVisible.frame.height + 2
+        let showsAllVisible = scale >= 1.5 || visibleBubbles.count <= max(40, Int(area.height / baseStep) * 2)
         let active = visibleBubbles.filter {
             showsAllVisible || featured.contains($0.id)
         }.sorted {
@@ -349,36 +411,51 @@ struct BubbleChart: View {
             return $0.id < $1.id
         }
         guard !active.isEmpty else { return [:] }
-        let minCenterY = area.minY + labelHeight / 2
-        let maxCenterY = area.maxY - labelHeight / 2
-        guard minCenterY <= maxCenterY else { return [:] }
+        let maxLabelWidth = max(1, plotRect.width - 12)
 
         var placedBands: [(minX: CGFloat, maxX: CGFloat, anchorY: CGFloat)] = []
         var specs: [LabelDistributionSpec] = []
         specs.reserveCapacity(active.count)
         for item in active {
             let spec = makeLabelSpec(for: item, candidates: visibleBubbles, placedBands: placedBands,
-                                     area: area, step: step, minCenterY: minCenterY, maxCenterY: maxCenterY)
+                                     area: area, maxLabelWidth: maxLabelWidth, minFontIndex: 0)
             specs.append(spec)
             placedBands.append((spec.minX, spec.maxX, item.anchor.y))
         }
+        var fontIndices = specs.map(\.fontIndex)
         var activeIndices = Array(active.indices)
 
         while !activeIndices.isEmpty {
-            let centerY = distributeCenters(indices: activeIndices, active: active, specs: specs,
-                                            step: step, minCenterY: minCenterY, maxCenterY: maxCenterY)
-            if let dropPosition = worstOvercrowdedPosition(indices: activeIndices, centerY: centerY,
-                                                           active: active, specs: specs,
-                                                           visibleBubbles: visibleBubbles,
-                                                           labelHeight: labelHeight, featured: featured) {
-                activeIndices.remove(at: dropPosition)
+            let centerY = distributeCenters(indices: activeIndices, active: active, specs: specs, area: area)
+            if let overcrowdedPos = worstOvercrowdedPosition(indices: activeIndices, centerY: centerY,
+                                                             active: active, specs: specs,
+                                                             visibleBubbles: visibleBubbles,
+                                                             featured: featured, primary: primary) {
+                let idx = activeIndices[overcrowdedPos]
+                let nextFontIndex = fontIndices[idx] + 1
+                if nextFontIndex < labelFontSizes.count {
+                    fontIndices[idx] = nextFontIndex
+                    let activeBands = activeIndices.filter { $0 != idx }.map {
+                        (specs[$0].minX, specs[$0].maxX, active[$0].anchor.y)
+                    }
+                    specs[idx] = makeLabelSpec(for: active[idx], candidates: visibleBubbles,
+                                               placedBands: activeBands, area: area,
+                                               maxLabelWidth: maxLabelWidth, minFontIndex: nextFontIndex)
+                } else {
+                    activeIndices.remove(at: overcrowdedPos)
+                }
                 continue
             }
-            var result: [String: CGSize] = [:]
+            var result: [String: ChartLabelLayout] = [:]
             for (pos, idx) in activeIndices.enumerated() {
                 let item = active[idx]
-                result[item.id] = CGSize(width: specs[idx].minX - item.anchor.x,
-                                         height: centerY[pos] - labelHeight / 2 - item.anchor.y)
+                let spec = specs[idx]
+                result[item.id] = ChartLabelLayout(
+                    offset: CGSize(width: spec.minX - item.anchor.x,
+                                   height: centerY[pos] - spec.size.height / 2 - item.anchor.y),
+                    fontSize: spec.fontSize,
+                    size: spec.size
+                )
             }
             return result
         }
@@ -386,6 +463,9 @@ struct BubbleChart: View {
     }
 
     private struct LabelDistributionSpec {
+        let fontIndex: Int
+        let fontSize: CGFloat
+        let size: CGSize
         let minX: CGFloat
         let maxX: CGFloat
         let spanMinX: CGFloat
@@ -395,82 +475,127 @@ struct BubbleChart: View {
         let hardClampToTarget: Bool
     }
 
+    private static func labelSize(for item: ChartLabelPlacement, fontSize: CGFloat, maxLabelWidth: CGFloat) -> CGSize {
+        if fontSize == labelFontSize {
+            return item.frame.size
+        }
+        return CGSize(
+            width: min(measuredLabelWidth(item.name, fontSize: fontSize), maxLabelWidth),
+            height: measuredLabelHeight(fontSize: fontSize)
+        )
+    }
+
     private static func makeLabelSpec(for item: ChartLabelPlacement, candidates: [ChartLabelPlacement],
                                       placedBands: [(minX: CGFloat, maxX: CGFloat, anchorY: CGFloat)],
-                                      area: CGRect, step: CGFloat,
-                                      minCenterY: CGFloat, maxCenterY: CGFloat) -> LabelDistributionSpec {
-        let h = item.frame.height
-        let clearanceRadius = candidates
-            .filter {
-                abs($0.anchor.x - item.anchor.x) <= max(item.radius, $0.radius) + 2 &&
-                abs($0.anchor.y - item.anchor.y) <= h * 2 + item.radius + $0.radius
-            }
-            .map(\.radius)
-            .max() ?? item.radius
-        let gap = max(item.radius, clearanceRadius) + 5
-        let rightMinX = item.anchor.x + gap
-        let rightMaxX = rightMinX + item.frame.width
-        let leftMaxX = item.anchor.x - gap
-        let leftMinX = leftMaxX - item.frame.width
+                                      area: CGRect, maxLabelWidth: CGFloat,
+                                      minFontIndex: Int) -> LabelDistributionSpec {
+        var bestPenalty: CGFloat = .infinity
+        var bestSpec: LabelDistributionSpec?
 
-        func sidePenalty(minX: CGFloat, maxX: CGFloat, isLeft: Bool) -> CGFloat {
-            var penalty: CGFloat = isLeft ? 100 : 0
-            if minX < area.minX { penalty += 1000 + (area.minX - minX) }
-            if maxX > area.maxX { penalty += 1000 + (maxX - area.maxX) }
-            for other in candidates {
-                if abs(other.anchor.x - item.anchor.x) <= max(item.radius, other.radius) + 2 &&
-                    abs(other.anchor.y - item.anchor.y) <= h * 2 {
-                    continue
+        for fontIndex in minFontIndex..<labelFontSizes.count {
+            let fontSize = labelFontSizes[fontIndex]
+            let size = labelSize(for: item, fontSize: fontSize, maxLabelWidth: maxLabelWidth)
+            let h = size.height
+            let step = h + 2
+            let minCenterY = area.minY + h / 2
+            let maxCenterY = area.maxY - h / 2
+            guard minCenterY <= maxCenterY else { continue }
+            var hasFeasibleInBounds = false
+
+            let clearanceRadius = candidates
+                .filter {
+                    abs($0.anchor.x - item.anchor.x) <= max(item.radius, $0.radius) + 2 &&
+                    abs($0.anchor.y - item.anchor.y) <= h * 2 + item.radius + $0.radius
                 }
-                if minX - 2 < other.anchor.x + other.radius + 2 && maxX + 2 > other.anchor.x - other.radius - 2 {
-                    let dy = abs(other.anchor.y - item.anchor.y)
-                    if dy < h / 2 + other.radius + 4 {
-                        penalty += 200
-                    } else if dy < h * 2 + other.radius {
-                        penalty += 30
+                .map(\.radius)
+                .max() ?? item.radius
+            let gap = max(item.radius, clearanceRadius) + 5
+
+            for isLeft in [false, true] {
+                let minX = isLeft ? item.anchor.x - gap - size.width : item.anchor.x + gap
+                let maxX = isLeft ? item.anchor.x - gap : item.anchor.x + gap + size.width
+                let spanMinX = isLeft ? minX : item.anchor.x
+                let spanMaxX = isLeft ? item.anchor.x : maxX
+
+                var penalty: CGFloat = (isLeft ? 100 : 0) + (labelFontSize - fontSize) * 45
+                if minX < area.minX { penalty += 1000 + (area.minX - minX) }
+                if maxX > area.maxX { penalty += 1000 + (maxX - area.maxX) }
+
+                var lo = minCenterY
+                var hi = maxCenterY
+                for other in candidates {
+                    let sameColumn = abs(other.anchor.x - item.anchor.x) <= max(item.radius, other.radius) + 2
+                    if sameColumn && abs(other.anchor.y - item.anchor.y) <= h * 2 {
+                        continue
+                    }
+                    if minX - 2 < other.anchor.x + other.radius + 2 && maxX + 2 > other.anchor.x - other.radius - 2 {
+                        if !sameColumn {
+                            if other.anchor.y >= item.anchor.y {
+                                hi = min(hi, other.anchor.y - other.radius - h / 2 - 1)
+                            } else {
+                                lo = max(lo, other.anchor.y + other.radius + h / 2 + 1)
+                            }
+                        }
+                        let dy = abs(other.anchor.y - item.anchor.y)
+                        if dy < h / 2 + other.radius + 4 {
+                            penalty += 200
+                        } else if dy < h * 2 + other.radius {
+                            penalty += 10
+                        }
                     }
                 }
-            }
-            for band in placedBands where max(band.minX, minX) < min(band.maxX, maxX) + 4 {
-                let dy = abs(band.anchorY - item.anchor.y)
-                if dy < step {
-                    penalty += 40
-                } else if dy < step * 2 {
-                    penalty += 15
+                let feasible = lo <= hi
+                if !feasible { penalty += 500 }
+
+                for band in placedBands where max(band.minX, minX) < min(band.maxX, maxX) + 4 {
+                    let dy = abs(band.anchorY - item.anchor.y)
+                    if dy < step {
+                        penalty += 40
+                    } else if dy < step * 2 {
+                        penalty += 15
+                    }
+                }
+
+                if minX >= area.minX && maxX <= area.maxX && feasible {
+                    hasFeasibleInBounds = true
+                }
+                if penalty < bestPenalty {
+                    bestPenalty = penalty
+                    let mid = (lo + hi) / 2
+                    bestSpec = LabelDistributionSpec(
+                        fontIndex: fontIndex,
+                        fontSize: fontSize,
+                        size: size,
+                        minX: minX,
+                        maxX: maxX,
+                        spanMinX: spanMinX,
+                        spanMaxX: spanMaxX,
+                        targetLo: feasible ? max(minCenterY, lo) : mid,
+                        targetHi: feasible ? min(maxCenterY, hi) : mid,
+                        hardClampToTarget: feasible
+                    )
                 }
             }
-            return penalty
+            if hasFeasibleInBounds { break }
         }
 
-        let chooseLeft = sidePenalty(minX: leftMinX, maxX: leftMaxX, isLeft: true)
-            < sidePenalty(minX: rightMinX, maxX: rightMaxX, isLeft: false)
-        let minX = chooseLeft ? leftMinX : rightMinX
-        let maxX = chooseLeft ? leftMaxX : rightMaxX
-        let spanMinX = chooseLeft ? minX : item.anchor.x
-        let spanMaxX = chooseLeft ? item.anchor.x : maxX
-
-        var lo = minCenterY
-        var hi = maxCenterY
-        for other in candidates where abs(other.anchor.x - item.anchor.x) > max(item.radius, other.radius) + 2 {
-            guard minX - 2 < other.anchor.x + other.radius + 2,
-                  maxX + 2 > other.anchor.x - other.radius - 2 else { continue }
-            if other.anchor.y >= item.anchor.y {
-                hi = min(hi, other.anchor.y - other.radius - h / 2 - 1)
-            } else {
-                lo = max(lo, other.anchor.y + other.radius + h / 2 + 1)
-            }
-        }
-        let mid = (lo + hi) / 2
-        let feasible = lo <= hi
-        return LabelDistributionSpec(minX: minX, maxX: maxX, spanMinX: spanMinX, spanMaxX: spanMaxX,
-                                     targetLo: feasible ? max(minCenterY, lo) : mid,
-                                     targetHi: feasible ? min(maxCenterY, hi) : mid,
-                                     hardClampToTarget: feasible)
+        if let bestSpec { return bestSpec }
+        return LabelDistributionSpec(
+            fontIndex: minFontIndex,
+            fontSize: labelFontSizes[minFontIndex],
+            size: item.frame.size,
+            minX: item.anchor.x + item.radius + 5,
+            maxX: item.anchor.x + item.radius + 5 + item.frame.width,
+            spanMinX: item.anchor.x,
+            spanMaxX: item.anchor.x + item.radius + 5 + item.frame.width,
+            targetLo: area.midY,
+            targetHi: area.midY,
+            hardClampToTarget: false
+        )
     }
 
     private static func distributeCenters(indices: [Int], active: [ChartLabelPlacement],
-                                          specs: [LabelDistributionSpec], step: CGFloat,
-                                          minCenterY: CGFloat, maxCenterY: CGFloat) -> [CGFloat] {
+                                          specs: [LabelDistributionSpec], area: CGRect) -> [CGFloat] {
         var centerY = indices.map { idx -> CGFloat in
             let spec = specs[idx]
             return min(spec.targetHi, max(spec.targetLo, active[idx].anchor.y))
@@ -486,31 +611,38 @@ struct BubbleChart: View {
             }
             for i in 0..<indices.count {
                 let specI = specs[indices[i]]
+                let minCI = area.minY + specI.size.height / 2
+                let maxCI = area.maxY - specI.size.height / 2
                 for j in (i + 1)..<indices.count {
                     let specJ = specs[indices[j]]
                     guard max(specI.spanMinX, specJ.spanMinX) < min(specI.spanMaxX, specJ.spanMaxX) + 4 else {
                         continue
                     }
+                    let minCJ = area.minY + specJ.size.height / 2
+                    let maxCJ = area.maxY - specJ.size.height / 2
+                    let pairStep = (specI.size.height + specJ.size.height) / 2 + 2
                     let diff = centerY[j] - centerY[i]
-                    guard diff < step else { continue }
-                    let push = (step - diff) / 2
-                    var nextI = max(minCenterY, centerY[i] - push)
-                    var nextJ = min(maxCenterY, centerY[j] + push)
-                    let remaining = step - (nextJ - nextI)
+                    guard diff < pairStep else { continue }
+                    let push = (pairStep - diff) / 2
+                    var nextI = max(minCI, centerY[i] - push)
+                    var nextJ = min(maxCJ, centerY[j] + push)
+                    let remaining = pairStep - (nextJ - nextI)
                     if remaining > 0 {
-                        if nextI == minCenterY {
-                            nextJ = min(maxCenterY, nextJ + remaining)
-                        } else if nextJ == maxCenterY {
-                            nextI = max(minCenterY, nextI - remaining)
+                        if nextI == minCI {
+                            nextJ = min(maxCJ, nextJ + remaining)
+                        } else if nextJ == maxCJ {
+                            nextI = max(minCI, nextI - remaining)
                         }
                     }
-                    centerY[i] = nextI
-                    centerY[j] = nextJ
+                    centerY[i] = min(maxCI, nextI)
+                    centerY[j] = max(minCJ, nextJ)
                 }
             }
             for pos in centerY.indices {
                 let spec = specs[indices[pos]]
-                var clamped = min(maxCenterY, max(minCenterY, centerY[pos]))
+                let minCY = area.minY + spec.size.height / 2
+                let maxCY = area.maxY - spec.size.height / 2
+                var clamped = min(maxCY, max(minCY, centerY[pos]))
                 if spec.hardClampToTarget {
                     clamped = min(spec.targetHi, max(spec.targetLo, clamped))
                 }
@@ -523,35 +655,39 @@ struct BubbleChart: View {
     private static func worstOvercrowdedPosition(indices: [Int], centerY: [CGFloat],
                                                  active: [ChartLabelPlacement], specs: [LabelDistributionSpec],
                                                  visibleBubbles: [ChartLabelPlacement],
-                                                 labelHeight: CGFloat, featured: Set<String>) -> Int? {
+                                                 featured: Set<String>, primary: Set<String>) -> Int? {
         var worstPosition: Int?
         var worstScore: CGFloat = 0
         for i in indices.indices {
             let idxI = indices[i]
             guard !featured.contains(active[idxI].id) else { continue }
             let specI = specs[idxI]
+            let heightI = specI.size.height
             var overlapPenalty: CGFloat = 0
             for j in indices.indices where i != j {
                 let specJ = specs[indices[j]]
                 guard max(specI.spanMinX, specJ.spanMinX) < min(specI.spanMaxX, specJ.spanMaxX) + 4 else {
                     continue
                 }
+                let minGap = (heightI + specJ.size.height) / 2 - 0.5
                 let gap = abs(centerY[j] - centerY[i])
-                if gap < labelHeight - 0.5 {
-                    overlapPenalty = max(overlapPenalty, (labelHeight - gap) * 10)
+                if gap < minGap {
+                    overlapPenalty = max(overlapPenalty, (minGap - gap) * 10)
                 }
             }
             for bubble in visibleBubbles {
                 if specI.minX - 1 < bubble.anchor.x + bubble.radius &&
                     specI.maxX + 1 > bubble.anchor.x - bubble.radius &&
-                    centerY[i] - labelHeight / 2 - 1 < bubble.anchor.y + bubble.radius &&
-                    centerY[i] + labelHeight / 2 + 1 > bubble.anchor.y - bubble.radius {
+                    centerY[i] - heightI / 2 - 1 < bubble.anchor.y + bubble.radius &&
+                    centerY[i] + heightI / 2 + 1 > bubble.anchor.y - bubble.radius {
                     overlapPenalty = max(overlapPenalty, 50)
                 }
             }
             let displacement = abs(centerY[i] - active[idxI].anchor.y)
-            let displacementPenalty = displacement > labelHeight * 4 ? displacement : 0
-            let score = overlapPenalty + displacementPenalty
+            let displacementPenalty = displacement > heightI * 2.5 ? displacement : 0
+            let conflict = overlapPenalty + displacementPenalty
+            let priorityPenalty: CGFloat = conflict > 0 && !primary.contains(active[idxI].id) ? 25 : 0
+            let score = conflict + priorityPenalty
             if score > worstScore {
                 worstScore = score
                 worstPosition = i
@@ -595,27 +731,35 @@ struct BubbleChart: View {
         }
     }
 
-    private func measuredLabelWidth(_ text: String) -> CGFloat {
+    private static func measuredLabelWidth(_ text: String, fontSize: CGFloat = labelFontSize) -> CGFloat {
         #if os(macOS)
-        let font = NSFont.systemFont(ofSize: Self.labelFontSize, weight: .medium)
-        return ceil((text as NSString).size(withAttributes: [.font: font, .kern: Self.labelTracking]).width) + 4
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+        return ceil((text as NSString).size(withAttributes: [.font: font, .kern: labelTracking]).width) + 4
         #elseif canImport(UIKit)
-        let font = UIFont.systemFont(ofSize: Self.labelFontSize, weight: .medium)
-        return ceil((text as NSString).size(withAttributes: [.font: font, .kern: Self.labelTracking]).width) + 4
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+        return ceil((text as NSString).size(withAttributes: [.font: font, .kern: labelTracking]).width) + 4
         #else
-        return ceil(CGFloat(text.count) * 7) + 4
+        return ceil(CGFloat(text.count) * fontSize * 0.60) + 4
         #endif
     }
 
-    private func measuredLabelHeight() -> CGFloat {
+    private static func measuredLabelHeight(fontSize: CGFloat = labelFontSize) -> CGFloat {
         #if os(macOS)
-        let font = NSFont.systemFont(ofSize: Self.labelFontSize, weight: .medium)
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         return ceil(font.ascender - font.descender + font.leading)
         #elseif canImport(UIKit)
-        return ceil(UIFont.systemFont(ofSize: Self.labelFontSize, weight: .medium).lineHeight)
+        return ceil(UIFont.systemFont(ofSize: fontSize, weight: .medium).lineHeight)
         #else
-        return 15
+        return ceil(fontSize * 1.25)
         #endif
+    }
+
+    private func measuredLabelWidth(_ text: String) -> CGFloat {
+        Self.measuredLabelWidth(text)
+    }
+
+    private func measuredLabelHeight() -> CGFloat {
+        Self.measuredLabelHeight()
     }
 
     private func visibleBounds(_ base: ClosedRange<Double>, offset: CGFloat,
@@ -632,10 +776,17 @@ struct BubbleChart: View {
     }
 }
 
+struct ChartLabelLayout: Equatable {
+    let offset: CGSize
+    let fontSize: CGFloat
+    let size: CGSize
+}
+
 struct ChartLabelPlacement: Identifiable {
     let id: String
     let name: String
     var color: Color = ink
+    var fontSize: CGFloat = 12
     let radius: CGFloat
     let anchor: CGPoint
     var frame: CGRect
