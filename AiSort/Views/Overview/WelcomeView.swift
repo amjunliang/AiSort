@@ -16,11 +16,13 @@ struct WelcomeView: View {
                 Text("在一张图中比较模型的智力、价格和速度，快速发现值得关注的选择。")
                     .font(.appSubheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                Label("连接 Artificial Analysis 数据", systemImage: "link")
-                Label("API Key 安全保存在设备钥匙串中", systemImage: "lock.shield")
-            }.font(.appCaption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                featureRow("link", "连接 Artificial Analysis 数据")
+                featureRow("lock.shield", "API Key 安全保存在设备钥匙串中")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 12) {
                 if hasKey {
                     Button(action: refresh) {
@@ -35,5 +37,17 @@ struct WelcomeView: View {
                 }
             }
         }.frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+
+    private func featureRow(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.appSubheadline.weight(.semibold))
+                .foregroundStyle(teal)
+                .frame(width: 20)
+            Text(text)
+                .font(.appSubheadline.weight(.medium))
+                .foregroundStyle(ink.opacity(0.85))
+        }
     }
 }
