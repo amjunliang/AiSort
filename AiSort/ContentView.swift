@@ -20,6 +20,9 @@ struct ContentView: View {
         showsChinaOnly ? store.filtered.filter { CreatorRegion.china.includes($0.modelCreator) } : store.filtered
     }
     private var plotted: [AIModel] { visibleModels.filter(\.isPlottable) }
+    private var plottedCreators: [String] {
+        Set(plotted.map(\.modelCreator.name)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,7 +42,8 @@ struct ContentView: View {
                 }
                 if store.updatedAt != nil {
                     ChartControls(hasModels: !plotted.isEmpty,
-                                  creators: Set(visibleModels.map(\.modelCreator.name)).sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+                                  hasMissingPrices: plotted.contains { $0.cost == nil },
+                                  creators: plottedCreators,
                                   scale: $scale, offset: $offset, resetCanvas: resetCanvas)
                         .background(Color(red: 0.965, green: 0.972, blue: 0.962))
                         .zIndex(1)
@@ -95,9 +99,9 @@ struct ContentView: View {
                         ContentUnavailableView {
                             Label("暂无可绘制的模型", systemImage: "chart.xyaxis.line")
                         } description: {
-                            Text(visibleModels.isEmpty ? "当前筛选条件下没有模型。" : "当前模型没有完整的图表指标。")
+                            Text(visibleModels.isEmpty ? "当前筛选条件下没有模型。" : "当前模型缺少绘图所需的指标。")
                         } actions: {
-                            Button("选择厂商") { showFilters = true }.buttonStyle(.borderedProminent)
+                            Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent)
                             if !visibleModels.isEmpty {
                                 Button("查看模型列表") { showModels = true }
                             }
@@ -119,11 +123,11 @@ struct ContentView: View {
             .frame(minHeight: minHeight)
         }
         .scrollClipDisabled(highlighted != nil)
-        .scrollDisabled(isChartZooming || scale > 1)
+        .modifier(ChartScrollLock(scale: $scale, isZooming: $isChartZooming))
         .scrollBounceBehavior(plotted.isEmpty ? .always : .basedOnSize)
     }
 
-    private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil }
+    private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil; focusRequest = nil }
 
     private func refresh() {
         Task { await store.refresh() }
@@ -138,5 +142,14 @@ struct ContentView: View {
             pendingDetail = model
         }
         showModels = false
+    }
+}
+
+private struct ChartScrollLock: ViewModifier {
+    @Binding var scale: CGFloat
+    @Binding var isZooming: Bool
+
+    func body(content: Content) -> some View {
+        content.scrollDisabled(isZooming || scale > 1)
     }
 }

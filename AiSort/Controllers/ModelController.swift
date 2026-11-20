@@ -3,6 +3,19 @@ import Combine
 
 @MainActor
 final class ModelController: ObservableObject {
+    struct ScoreFilter: Equatable {
+        var minimum: Double?
+        var maximum: Double?
+
+        var isActive: Bool { minimum != nil || maximum != nil }
+
+        func includes(_ score: Double?) -> Bool {
+            guard isActive else { return true }
+            guard let score, score.isFinite else { return false }
+            return score >= (minimum ?? -.infinity) && score <= (maximum ?? .infinity)
+        }
+    }
+
     @Published var models: [AIModel] = []
     @Published var updatedAt: Date?
     @Published var indexVersion: Double?
@@ -12,6 +25,7 @@ final class ModelController: ObservableObject {
     @Published var notice: String?
     @Published var hasKey: Bool
     @Published var selectedCreators: Set<String> = []
+    @Published private(set) var scoreFilter = ScoreFilter()
     @Published private(set) var canvasResetVersion = 0
     @Published private(set) var rateLimit: RateLimit?
     private(set) var pagesPerRefresh: Int?
@@ -19,6 +33,7 @@ final class ModelController: ObservableObject {
     private var didRefreshOnLaunch = false
     private var isSilentRefresh = false
     private let filterKey = "creatorFilterSelection"
+    private let scoreFilterKey = "intelligenceScoreFilter"
     private var generation = 0
     private let api: ModelAPI
     private let cacheStore: ModelCacheStore
@@ -30,7 +45,9 @@ final class ModelController: ObservableObject {
     private let pagesKey = "apiPagesPerRefresh"
     var showsLoadingIndicator: Bool { isLoading && !isSilentRefresh }
     var creators: [String] { Array(Set(models.map { $0.modelCreator.name })).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
-    var filtered: [AIModel] { models.filter { selectedCreators.contains($0.modelCreator.name) } }
+    var filtered: [AIModel] {
+        models.filter { selectedCreators.contains($0.modelCreator.name) && scoreFilter.includes($0.intelligence) }
+    }
     init(api: ModelAPI? = nil, cacheStore: ModelCacheStore? = nil, defaults: UserDefaults = .standard,
          policy: RefreshPolicy? = nil, now: @escaping () -> Date = Date.init,
          readKey: @escaping @MainActor () -> String? = Keychain.read) {
@@ -45,6 +62,8 @@ final class ModelController: ObservableObject {
         pagesPerRefresh = defaults.object(forKey: pagesKey) as? Int
         self.allSelected = defaults.object(forKey: "creatorFilterAll") as? Bool ?? true
         selectedCreators = Set(defaults.stringArray(forKey: filterKey) ?? [])
+        let scoreBounds = defaults.dictionary(forKey: scoreFilterKey)
+        scoreFilter = ScoreFilter(minimum: scoreBounds?["minimum"] as? Double, maximum: scoreBounds?["maximum"] as? Double)
         loadCache()
         if allSelected {
             selectedCreators = Set(creators)
@@ -56,6 +75,13 @@ final class ModelController: ObservableObject {
     private func saveFilter() {
         defaults.set(allSelected, forKey: "creatorFilterAll")
         if !allSelected { defaults.set(Array(selectedCreators), forKey: filterKey) }
+    }
+    func setScoreFilter(_ filter: ScoreFilter) {
+        guard scoreFilter != filter else { return }
+        scoreFilter = filter
+        let bounds = ["minimum": filter.minimum, "maximum": filter.maximum].compactMapValues { $0 }
+        defaults.set(bounds, forKey: scoreFilterKey)
+        canvasResetVersion += 1
     }
     func selectAll() { allSelected = true; selectedCreators = Set(creators); saveFilter(); canvasResetVersion += 1 }
     func clearSelection() { allSelected = false; selectedCreators = []; saveFilter(); canvasResetVersion += 1 }

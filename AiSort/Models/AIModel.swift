@@ -81,16 +81,17 @@ struct AIModel: Codable, Identifiable {
 
     var intelligence: Double? { evaluations.artificialAnalysisIntelligenceIndex }
     var speed: Double? { performance.medianOutputTokensPerSecond }
+    var chartSpeed: Double? { speed.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } }
     var cost: Double? {
         guard let input = pricing.price1mInputTokens, let output = pricing.price1mOutputTokens, input >= 0, output >= 0 else { return nil }
-        return (input * 3 + output) / 4
+        let blended = (input * 3 + output) / 4
+        return blended.isFinite ? blended : nil
     }
     var isPlottable: Bool {
-        guard let cost, let intelligence, let speed else { return false }
-        return cost.isFinite && intelligence.isFinite && speed.isFinite && speed >= 0
+        intelligence?.isFinite == true && (cost == nil || chartSpeed != nil)
     }
     // log(1 + cost) retains zero and compresses the wide range of prices.
-    var chartCost: Double { log10(1 + (cost ?? 0)) }
+    var chartCost: Double? { cost.map { log10(1 + $0) } }
 }
 
 enum CreatorRegion: String, CaseIterable {

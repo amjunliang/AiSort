@@ -25,11 +25,12 @@ struct OverviewToolbar: View {
                     .accessibilityLabel("搜索模型")
                     .help("搜索模型")
                 Button { showFilters() } label: {
-                    Image(systemName: store.selectedCreators.count < store.creators.count ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    Image(systemName: store.scoreFilter.isActive || store.selectedCreators.count < store.creators.count ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                         .frame(width: 32, height: 44)
                 }
-                .accessibilityLabel("筛选厂商，已选择 \(store.selectedCreators.count) 个")
-                .help("筛选厂商")
+                .accessibilityLabel("筛选模型")
+                .accessibilityValue(store.scoreFilter.isActive ? "已启用分数筛选" : "已选择 \(store.selectedCreators.count) 个厂商")
+                .help("筛选模型")
                 Button { Task { await store.refresh() } } label: {
                     if store.showsLoadingIndicator { ProgressView().controlSize(.small).frame(width: 32, height: 44) }
                     else { Image(systemName: "arrow.clockwise").frame(width: 32, height: 44) }

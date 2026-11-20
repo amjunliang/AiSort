@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChartControls: View {
     let hasModels: Bool
+    let hasMissingPrices: Bool
     let creators: [String]
     @Binding var scale: CGFloat
     @Binding var offset: CGSize
@@ -10,7 +11,8 @@ struct ChartControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Label("气泡越大，输出越快", systemImage: "circle.dotted.circle")
+                Label(hasMissingPrices ? "气泡越大，输出越快\n空心圆表示暂无报价" : "气泡越大，输出越快",
+                      systemImage: "circle.dotted.circle")
                     .font(.appCaption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 HStack(spacing: 0) {
