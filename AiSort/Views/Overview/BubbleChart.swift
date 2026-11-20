@@ -20,8 +20,8 @@ struct BubbleChart: View {
     let showDetail: (AIModel) -> Void
     @State private var resolvedLabels: ResolvedChartLabels?
     @State private var hoveredModelID: String?
-    private static let labelFontSize: CGFloat = 12
-    private static let labelFontSizes: [CGFloat] = [12, 10, 9, 8.5]
+    nonisolated private static let labelFontSize: CGFloat = 12
+    nonisolated private static let labelFontSizes: [CGFloat] = [12, 10, 9, 8.5]
     private static let labelTracking: CGFloat = -0.35
     private func visibleFrontierIDs(metrics: ChartMetrics, xRange: ClosedRange<Double>,
                                     yRange: ClosedRange<Double>) -> Set<String> {
@@ -314,14 +314,15 @@ struct BubbleChart: View {
         .allowsHitTesting(false)
         .task(id: layoutKey) {
             guard resolvedLabels?.key != layoutKey else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
             guard !Task.isCancelled else { return }
             let candidates = labelCandidates(plotRect: plotRect, metrics: metrics, xRange: xRange, yRange: yRange)
             let featured = featuredModelIDs
             let frontier = visibleFrontierIDs(metrics: metrics, xRange: xRange, yRange: yRange)
             let primary = primaryModelIDs(frontier: frontier)
-            let layouts = Self.resolveLabelLayouts(candidates, plotRect: plotRect, scale: scale,
-                                                   featured: featured, primary: primary)
+            let input = Self.measureLabels(candidates, plotRect: plotRect, scale: scale, featured: featured)
+            let layouts = await Self.solveLabelsInBackground(input, featured: featured, primary: primary)
+            guard !Task.isCancelled else { return }
             let placements = candidates.compactMap { candidate -> ChartLabelPlacement? in
                 guard let layout = layouts[candidate.id] else { return nil }
                 var label = candidate
@@ -383,11 +384,16 @@ struct BubbleChart: View {
     static func resolveLabelLayouts(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
                                     scale: CGFloat, featured: Set<String>,
                                     primary: Set<String> = []) -> [String: ChartLabelLayout] {
+        let input = measureLabels(candidates, plotRect: plotRect, scale: scale, featured: featured)
+        return solveLabels(input, featured: featured, primary: primary)
+    }
+
+    private static func measureLabels(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
+                                      scale: CGFloat, featured: Set<String>) -> LabelLayoutInput {
         let area = plotRect.insetBy(dx: -16, dy: -24)
         let hitArea = plotRect.insetBy(dx: -4, dy: -4)
         let visibleBubbles = candidates.filter { hitArea.contains($0.anchor) }
-        guard let firstVisible = visibleBubbles.first else { return [:] }
-        let baseStep = firstVisible.frame.height + 2
+        let baseStep = (visibleBubbles.first?.frame.height ?? 0) + 2
         let showsAllVisible = scale >= 1.5 || visibleBubbles.count <= max(40, Int(area.height / baseStep) * 2)
         let active = visibleBubbles.filter {
             showsAllVisible || featured.contains($0.id)
@@ -396,15 +402,35 @@ struct BubbleChart: View {
             if $0.anchor.x != $1.anchor.x { return $0.anchor.x < $1.anchor.x }
             return $0.id < $1.id
         }
-        guard !active.isEmpty else { return [:] }
         let maxLabelWidth = max(1, plotRect.width - 12)
+        let compactFontSizes = labelFontSizes.dropFirst()
+        let compactHeights = compactFontSizes.map { measuredLabelHeight(fontSize: $0) }
+        let sizes = active.map { item in
+            [item.frame.size] + zip(compactFontSizes, compactHeights).map { fontSize, height in
+                CGSize(width: min(measuredLabelWidth(item.name, fontSize: fontSize), maxLabelWidth), height: height)
+            }
+        }
+        return LabelLayoutInput(area: area, visibleBubbles: visibleBubbles, active: active, sizes: sizes)
+    }
 
+    @concurrent
+    nonisolated private static func solveLabelsInBackground(_ input: LabelLayoutInput, featured: Set<String>,
+                                                           primary: Set<String>) async -> [String: ChartLabelLayout] {
+        solveLabels(input, featured: featured, primary: primary)
+    }
+
+    nonisolated private static func solveLabels(_ input: LabelLayoutInput, featured: Set<String>,
+                                                primary: Set<String>) -> [String: ChartLabelLayout] {
+        let area = input.area
+        let active = input.active
+        let visibleBubbles = input.visibleBubbles
         var placedBands: [(minX: CGFloat, maxX: CGFloat, anchorY: CGFloat)] = []
         var specs: [LabelDistributionSpec] = []
         specs.reserveCapacity(active.count)
-        for item in active {
-            let spec = makeLabelSpec(for: item, candidates: visibleBubbles, placedBands: placedBands,
-                                     area: area, maxLabelWidth: maxLabelWidth, minFontIndex: 0)
+        for (index, item) in active.enumerated() {
+            guard !Task.isCancelled else { return [:] }
+            let spec = makeLabelSpec(for: item, sizes: input.sizes[index], candidates: visibleBubbles,
+                                     placedBands: placedBands, area: area, minFontIndex: 0)
             specs.append(spec)
             placedBands.append((spec.minX, spec.maxX, item.anchor.y))
         }
@@ -412,9 +438,13 @@ struct BubbleChart: View {
         var activeIndices = Array(active.indices)
 
         while !activeIndices.isEmpty {
-            let centerY = distributeCenters(indices: activeIndices, active: active, specs: specs, area: area)
+            guard !Task.isCancelled else { return [:] }
+            let neighbors = overlappingLabels(indices: activeIndices, specs: specs)
+            let centerY = distributeCenters(indices: activeIndices, active: active, specs: specs,
+                                            neighbors: neighbors, area: area)
+            guard !Task.isCancelled else { return [:] }
             if let overcrowdedPos = worstOvercrowdedPosition(indices: activeIndices, centerY: centerY,
-                                                             active: active, specs: specs,
+                                                             active: active, specs: specs, neighbors: neighbors,
                                                              visibleBubbles: visibleBubbles,
                                                              featured: featured, primary: primary) {
                 let idx = activeIndices[overcrowdedPos]
@@ -424,9 +454,8 @@ struct BubbleChart: View {
                     let activeBands = activeIndices.filter { $0 != idx }.map {
                         (specs[$0].minX, specs[$0].maxX, active[$0].anchor.y)
                     }
-                    specs[idx] = makeLabelSpec(for: active[idx], candidates: visibleBubbles,
-                                               placedBands: activeBands, area: area,
-                                               maxLabelWidth: maxLabelWidth, minFontIndex: nextFontIndex)
+                    specs[idx] = makeLabelSpec(for: active[idx], sizes: input.sizes[idx], candidates: visibleBubbles,
+                                               placedBands: activeBands, area: area, minFontIndex: nextFontIndex)
                 } else {
                     activeIndices.remove(at: overcrowdedPos)
                 }
@@ -448,7 +477,7 @@ struct BubbleChart: View {
         return [:]
     }
 
-    private struct LabelDistributionSpec {
+    nonisolated private struct LabelDistributionSpec {
         let fontIndex: Int
         let fontSize: CGFloat
         let size: CGSize
@@ -461,26 +490,16 @@ struct BubbleChart: View {
         let hardClampToTarget: Bool
     }
 
-    private static func labelSize(for item: ChartLabelPlacement, fontSize: CGFloat, maxLabelWidth: CGFloat) -> CGSize {
-        if fontSize == labelFontSize {
-            return item.frame.size
-        }
-        return CGSize(
-            width: min(measuredLabelWidth(item.name, fontSize: fontSize), maxLabelWidth),
-            height: measuredLabelHeight(fontSize: fontSize)
-        )
-    }
-
-    private static func makeLabelSpec(for item: ChartLabelPlacement, candidates: [ChartLabelPlacement],
-                                      placedBands: [(minX: CGFloat, maxX: CGFloat, anchorY: CGFloat)],
-                                      area: CGRect, maxLabelWidth: CGFloat,
-                                      minFontIndex: Int) -> LabelDistributionSpec {
+    nonisolated private static func makeLabelSpec(for item: ChartLabelPlacement, sizes: [CGSize],
+                                                  candidates: [ChartLabelPlacement],
+                                                  placedBands: [(minX: CGFloat, maxX: CGFloat, anchorY: CGFloat)],
+                                                  area: CGRect, minFontIndex: Int) -> LabelDistributionSpec {
         var bestPenalty: CGFloat = .infinity
         var bestSpec: LabelDistributionSpec?
 
         for fontIndex in minFontIndex..<labelFontSizes.count {
             let fontSize = labelFontSizes[fontIndex]
-            let size = labelSize(for: item, fontSize: fontSize, maxLabelWidth: maxLabelWidth)
+            let size = sizes[fontIndex]
             let h = size.height
             let step = h + 2
             let minCenterY = area.minY + h / 2
@@ -488,14 +507,14 @@ struct BubbleChart: View {
             guard minCenterY <= maxCenterY else { continue }
             var hasFeasibleInBounds = false
 
-            let clearanceRadius = candidates
-                .filter {
-                    abs($0.anchor.x - item.anchor.x) <= max(item.radius, $0.radius) + 2 &&
-                    abs($0.anchor.y - item.anchor.y) <= h * 2 + item.radius + $0.radius
+            var clearanceRadius = item.radius
+            for other in candidates where other.radius > clearanceRadius {
+                if abs(other.anchor.x - item.anchor.x) <= other.radius + 2 &&
+                    abs(other.anchor.y - item.anchor.y) <= h * 2 + item.radius + other.radius {
+                    clearanceRadius = other.radius
                 }
-                .map(\.radius)
-                .max() ?? item.radius
-            let gap = max(item.radius, clearanceRadius) + 5
+            }
+            let gap = clearanceRadius + 5
 
             for isLeft in [false, true] {
                 let minX = isLeft ? item.anchor.x - gap - size.width : item.anchor.x + gap
@@ -580,33 +599,46 @@ struct BubbleChart: View {
         )
     }
 
-    private static func distributeCenters(indices: [Int], active: [ChartLabelPlacement],
-                                          specs: [LabelDistributionSpec], area: CGRect) -> [CGFloat] {
-        var centerY = indices.map { idx -> CGFloat in
+    nonisolated private static func overlappingLabels(indices: [Int], specs: [LabelDistributionSpec]) -> [[Int]] {
+        var neighbors = Array(repeating: [Int](), count: indices.count)
+        for i in indices.indices {
+            let a = specs[indices[i]]
+            for j in (i + 1)..<indices.count {
+                let b = specs[indices[j]]
+                if max(a.spanMinX, b.spanMinX) < min(a.spanMaxX, b.spanMaxX) + 4 {
+                    neighbors[i].append(j)
+                    neighbors[j].append(i)
+                }
+            }
+        }
+        return neighbors
+    }
+
+    nonisolated private static func distributeCenters(indices: [Int], active: [ChartLabelPlacement],
+                                                      specs: [LabelDistributionSpec], neighbors: [[Int]],
+                                                      area: CGRect) -> [CGFloat] {
+        let heights = indices.map { specs[$0].size.height }
+        let minimumCenters = heights.map { area.minY + $0 / 2 }
+        let maximumCenters = heights.map { area.maxY - $0 / 2 }
+        let targets = indices.map { idx -> CGFloat in
             let spec = specs[idx]
             return min(spec.targetHi, max(spec.targetLo, active[idx].anchor.y))
         }
+        var centerY = targets
+        var previous = centerY
         for iteration in 0..<60 {
+            if Task.isCancelled { return centerY }
             let alpha = max(0, 0.25 * (1 - CGFloat(iteration) / 35))
             if alpha > 0 {
                 for pos in indices.indices {
-                    let idx = indices[pos]
-                    let target = min(specs[idx].targetHi, max(specs[idx].targetLo, active[idx].anchor.y))
-                    centerY[pos] += alpha * (target - centerY[pos])
+                    centerY[pos] += alpha * (targets[pos] - centerY[pos])
                 }
             }
-            for i in 0..<indices.count {
-                let specI = specs[indices[i]]
-                let minCI = area.minY + specI.size.height / 2
-                let maxCI = area.maxY - specI.size.height / 2
-                for j in (i + 1)..<indices.count {
-                    let specJ = specs[indices[j]]
-                    guard max(specI.spanMinX, specJ.spanMinX) < min(specI.spanMaxX, specJ.spanMaxX) + 4 else {
-                        continue
-                    }
-                    let minCJ = area.minY + specJ.size.height / 2
-                    let maxCJ = area.maxY - specJ.size.height / 2
-                    let pairStep = (specI.size.height + specJ.size.height) / 2 + 2
+            for i in indices.indices {
+                let minCI = minimumCenters[i], maxCI = maximumCenters[i]
+                for j in neighbors[i] where j > i {
+                    let minCJ = minimumCenters[j], maxCJ = maximumCenters[j]
+                    let pairStep = (heights[i] + heights[j]) / 2 + 2
                     let diff = centerY[j] - centerY[i]
                     guard diff < pairStep else { continue }
                     let push = (pairStep - diff) / 2
@@ -626,20 +658,25 @@ struct BubbleChart: View {
             }
             for pos in centerY.indices {
                 let spec = specs[indices[pos]]
-                let minCY = area.minY + spec.size.height / 2
-                let maxCY = area.maxY - spec.size.height / 2
+                let minCY = minimumCenters[pos], maxCY = maximumCenters[pos]
                 var clamped = min(maxCY, max(minCY, centerY[pos]))
                 if spec.hardClampToTarget {
                     clamped = min(spec.targetHi, max(spec.targetLo, clamped))
                 }
                 centerY[pos] = clamped
             }
+            if iteration == 0 && centerY == targets { break }
+            if alpha == 0 {
+                if centerY == previous { break }
+                previous = centerY
+            }
         }
         return centerY
     }
 
-    private static func worstOvercrowdedPosition(indices: [Int], centerY: [CGFloat],
-                                                 active: [ChartLabelPlacement], specs: [LabelDistributionSpec],
+    nonisolated private static func worstOvercrowdedPosition(indices: [Int], centerY: [CGFloat],
+                                                            active: [ChartLabelPlacement], specs: [LabelDistributionSpec],
+                                                            neighbors: [[Int]],
                                                  visibleBubbles: [ChartLabelPlacement],
                                                  featured: Set<String>, primary: Set<String>) -> Int? {
         var worstPosition: Int?
@@ -650,23 +687,21 @@ struct BubbleChart: View {
             let specI = specs[idxI]
             let heightI = specI.size.height
             var overlapPenalty: CGFloat = 0
-            for j in indices.indices where i != j {
+            for j in neighbors[i] {
                 let specJ = specs[indices[j]]
-                guard max(specI.spanMinX, specJ.spanMinX) < min(specI.spanMaxX, specJ.spanMaxX) + 4 else {
-                    continue
-                }
                 let minGap = (heightI + specJ.size.height) / 2 - 0.5
                 let gap = abs(centerY[j] - centerY[i])
                 if gap < minGap {
                     overlapPenalty = max(overlapPenalty, (minGap - gap) * 10)
                 }
             }
-            for bubble in visibleBubbles {
+            for bubble in visibleBubbles where overlapPenalty < 50 {
                 if specI.minX - 1 < bubble.anchor.x + bubble.radius &&
                     specI.maxX + 1 > bubble.anchor.x - bubble.radius &&
                     centerY[i] - heightI / 2 - 1 < bubble.anchor.y + bubble.radius &&
                     centerY[i] + heightI / 2 + 1 > bubble.anchor.y - bubble.radius {
-                    overlapPenalty = max(overlapPenalty, 50)
+                    overlapPenalty = 50
+                    break
                 }
             }
             let displacement = abs(centerY[i] - active[idxI].anchor.y)
@@ -754,13 +789,13 @@ struct BubbleChart: View {
     }
 }
 
-struct ChartLabelLayout: Equatable {
+nonisolated struct ChartLabelLayout: Equatable, Sendable {
     let offset: CGSize
     let fontSize: CGFloat
     let size: CGSize
 }
 
-struct ChartLabelPlacement: Identifiable {
+nonisolated struct ChartLabelPlacement: Identifiable, Sendable {
     let id: String
     let name: String
     var color: Color = ink
@@ -817,6 +852,13 @@ private struct ChartMetrics {
     }
 
     func bubbleRadius(for model: AIModel) -> CGFloat { sqrt(bubbleSize(for: model)) / 2 }
+}
+
+nonisolated private struct LabelLayoutInput: Sendable {
+    let area: CGRect
+    let visibleBubbles: [ChartLabelPlacement]
+    let active: [ChartLabelPlacement]
+    let sizes: [[CGSize]]
 }
 
 private struct LabelLayoutKey: Equatable {
