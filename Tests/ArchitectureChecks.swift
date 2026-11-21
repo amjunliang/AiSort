@@ -85,6 +85,26 @@ struct ArchitectureChecks {
         require(restoredFilters.filtered.map(\.name) == ["Beta"], "Score bounds were not persisted")
         restoredFilters.setScoreFilter(.init())
         require(restoredFilters.filtered.count == 3, "Clearing score bounds should restore unscored models")
+        let resetBeforeFavorite = restoredFilters.canvasResetVersion
+        require(!restoredFilters.isFavorite(first.id), "Model should not be favorited initially")
+        restoredFilters.toggleFavorite(first.id)
+        require(restoredFilters.isFavorite(first.id) && restoredFilters.favoriteModelIDs == [first.id], "Toggle should favorite model")
+        require(restoredFilters.canvasResetVersion == resetBeforeFavorite, "Toggling favorite should not reset canvas viewport")
+        let restoredFavorites = ModelController(cacheStore: cacheStore, defaults: defaults, readKey: { nil })
+        require(restoredFavorites.isFavorite(first.id) && restoredFavorites.favoriteModelIDs == [first.id], "Favorites were not persisted")
+        restoredFavorites.toggleFavorite(first.id)
+        require(restoredFavorites.favoriteModelIDs.isEmpty, "Second toggle should unfavorite model")
+        require(ReasoningEffort.parse(from: "GPT-6 (XHigh)") == .xhigh, "XHigh effort not parsed")
+        require(ReasoningEffort.parse(from: "Gemini 4 (Medium)") == .medium, "Medium effort not parsed")
+        require(ReasoningEffort.parse(from: "Claude Opus (Adaptive, Max)") == .max, "Max effort in multi-token parens not parsed")
+        require(ReasoningEffort.parse(from: "Plain Model") == .none, "Plain model should map to .none effort")
+        restoredFavorites.toggleReasoningEffort(.high)
+        restoredFavorites.toggleReasoningEffort(.max)
+        let restoredEfforts = ModelController(cacheStore: cacheStore, defaults: defaults, readKey: { nil })
+        require(restoredEfforts.selectedReasoningEfforts == [.high, .max], "Reasoning effort filter was not persisted")
+        restoredEfforts.toggleReasoningEffort(.high)
+        restoredEfforts.toggleReasoningEffort(.max)
+        require(restoredEfforts.selectedReasoningEfforts.isEmpty, "Clearing reasoning efforts should restore empty set")
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)
@@ -267,6 +287,21 @@ struct ArchitectureChecks {
         let rightLabelX = rightEdgeItem.anchor.x + (overviewOffsets[rightEdgeItem.id]?.width ?? 0)
         require(rightLabelX + rightEdgeItem.frame.width <= rightEdgeItem.anchor.x - rightEdgeItem.radius - 4,
                 "Right-edge featured label should sit cleanly on the left side")
+        let crowdedRightEdge: [ChartLabelPlacement] = [
+            placement("Costliest", x: 675, score: 50.0, r: 9, w: 145),
+            placement("LeftNeighbor1", x: 610, score: 50.2, r: 8, w: 110),
+            placement("LeftNeighbor2", x: 580, score: 49.8, r: 8, w: 110),
+            placement("LeftNeighbor3", x: 550, score: 50.0, r: 8, w: 110)
+        ]
+        let crowdedRightLayouts = BubbleChart.resolveLabelLayouts(crowdedRightEdge, plotRect: plotRect, scale: 1.0,
+                                                                  featured: ["Costliest"])
+        if let costliestLayout = crowdedRightLayouts["Costliest"] {
+            let costliestMaxX = 675 + costliestLayout.offset.width + costliestLayout.size.width
+            require(costliestMaxX <= plotRect.maxX + 6,
+                    "Costliest model at right edge must not clip off right side even with neighbors on left, got maxX=\(costliestMaxX)")
+        } else {
+            fatalError("Costliest featured label must remain visible")
+        }
         let leftLabelX = leftEdgeItem.anchor.x + (overviewOffsets[leftEdgeItem.id]?.width ?? 0)
         require(leftLabelX >= leftEdgeItem.anchor.x + leftEdgeItem.radius + 4,
                 "Left-edge featured label should sit cleanly on the right side")

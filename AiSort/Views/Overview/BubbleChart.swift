@@ -10,6 +10,7 @@ import UIKit
 struct BubbleChart: View {
     let models: [AIModel]
     let scaleModels: [AIModel]
+    let favoriteModelIDs: Set<String>
     @Binding var highlighted: AIModel?
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
@@ -17,6 +18,7 @@ struct BubbleChart: View {
     let viewportSize: CGSize
     let extraHorizontalPan: CGFloat
     let isInteracting: Bool
+    let toggleFavorite: (AIModel) -> Void
     let showDetail: (AIModel) -> Void
     @State private var resolvedLabels: ResolvedChartLabels?
     @State private var hoveredModelID: String?
@@ -33,7 +35,7 @@ struct BubbleChart: View {
     }
 
     private func primaryModelIDs(frontier: Set<String>) -> Set<String> {
-        var ids = frontier
+        var ids = frontier.union(favoriteModelIDs)
         if let highlightedID = highlighted?.id { ids.insert(highlightedID) }
         if let hoveredModelID { ids.insert(hoveredModelID) }
         return ids
@@ -86,8 +88,15 @@ struct BubbleChart: View {
         let ySpan = visibleYBounds.upperBound - visibleYBounds.lowerBound
         let showsEveryIntelligenceValue = Double(max(0, viewportSize.height - 80)) / ySpan >= 26
 
+        let orderedModels = models.sorted {
+            let sizeA = metrics.bubbleSize(for: $0)
+            let sizeB = metrics.bubbleSize(for: $1)
+            if sizeA != sizeB { return sizeA > sizeB }
+            return $0.id < $1.id
+        }
+
         Chart {
-            ForEach(models) { model in
+            ForEach(orderedModels) { model in
                 if let intelligence = model.intelligence {
                     let color = creatorColor(model.modelCreator.name).opacity(0.96)
                     let point = PointMark(x: .value("成本", metrics.x(for: model)), y: .value("智力指数", intelligence))
@@ -243,9 +252,11 @@ struct BubbleChart: View {
                                               in: CGSize(width: size.width, height: size.height + spaceAbove),
                                               gap: radius)
         let frame = placement.frame.offsetBy(dx: 0, dy: -spaceAbove)
-        return ModelBubble(model: model, width: width, showsName: showsName,
+        return ModelBubble(model: model, isFavorite: favoriteModelIDs.contains(model.id),
+                           width: width, showsName: showsName,
                            pointsUp: placement.isBelowAnchor,
                            tailCenterX: min(width - 23, max(23, anchor.x - frame.minX)),
+                           toggleFavorite: { toggleFavorite(model) },
                            showDetail: { showDetail(model) }, dismiss: { highlighted = nil })
             .position(x: frame.midX, y: frame.midY)
             .zIndex(2)
@@ -278,32 +289,54 @@ struct BubbleChart: View {
             missingPriceX: metrics.missingPriceX, maxSpeed: metrics.maxSpeed,
             models: models.map { model in
                 LabelModel(id: model.id, name: model.name, creator: model.modelCreator.name,
-                           cost: model.cost, intelligence: model.intelligence, speed: model.chartSpeed)
+                           cost: model.cost, intelligence: model.intelligence, speed: model.chartSpeed,
+                           isFavorite: favoriteModelIDs.contains(model.id))
             }
         )
-        let labels = resolvedLabels?.key == layoutKey ? resolvedLabels?.placements ?? [] : []
+        let canReuseLabels = resolvedLabels.map { $0.key == layoutKey || $0.key.hasSameViewport(as: layoutKey) } ?? false
+        let labels = canReuseLabels ? resolvedLabels?.placements ?? [] : []
+        let orderedLabels = labels.filter { !$0.isFavorite } + labels.filter { $0.isFavorite }
         let primary = primaryModelIDs(frontier: resolvedLabels?.frontier ?? [])
         let featured = resolvedLabels?.featured ?? []
         return ZStack(alignment: .topLeading) {
-            ForEach(labels) { label in
+            ForEach(orderedLabels) { label in
                 let emphasized = primary.contains(label.id) || featured.contains(label.id)
                 leaderLine(for: label)
                     .stroke(emphasized ? label.color.opacity(0.62) : label.color.mix(with: ink, by: 0.25).opacity(0.24),
                             lineWidth: emphasized ? 1.0 : 0.75)
             }
-            ForEach(labels) { label in
-                let emphasized = primary.contains(label.id) || featured.contains(label.id)
-                let color = emphasized ? label.color.opacity(0.98)
-                    : label.color.mix(with: ink, by: 0.35).opacity(label.fontSize < Self.labelFontSize ? 0.68 : 0.74)
-                Text(label.name)
-                    .font(.system(size: label.fontSize, weight: emphasized ? .semibold : .regular))
-                    .tracking(Self.labelTracking)
-                    .foregroundStyle(color)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .frame(width: label.frame.width,
-                           alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
-                    .offset(x: label.frame.minX, y: label.frame.minY)
+            ForEach(orderedLabels) { label in
+                if label.isFavorite {
+                    let color = label.color.opacity(0.98)
+                    Text(label.name)
+                        .font(.system(size: label.fontSize, weight: .semibold))
+                        .tracking(Self.labelTracking)
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 0.5)
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(label.color.opacity(0.45), lineWidth: 0.5)
+                        }
+                        .frame(width: label.frame.width,
+                               alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
+                        .offset(x: label.frame.minX, y: label.frame.minY)
+                } else {
+                    let emphasized = primary.contains(label.id) || featured.contains(label.id)
+                    let color = emphasized ? label.color.opacity(0.98)
+                        : label.color.mix(with: ink, by: 0.35).opacity(label.fontSize < Self.labelFontSize ? 0.68 : 0.74)
+                    Text(label.name)
+                        .font(.system(size: label.fontSize, weight: emphasized ? .semibold : .regular))
+                        .tracking(Self.labelTracking)
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .frame(width: label.frame.width,
+                               alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
+                        .offset(x: label.frame.minX, y: label.frame.minY)
+                }
             }
         }
         .mask(alignment: .topLeading) {
@@ -314,7 +347,10 @@ struct BubbleChart: View {
         .allowsHitTesting(false)
         .task(id: layoutKey) {
             guard resolvedLabels?.key != layoutKey else { return }
-            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+            let sameViewport = resolvedLabels?.key.hasSameViewport(as: layoutKey) ?? false
+            if !sameViewport {
+                do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+            }
             guard !Task.isCancelled else { return }
             let candidates = labelCandidates(plotRect: plotRect, metrics: metrics, xRange: xRange, yRange: yRange)
             let featured = featuredModelIDs
@@ -341,7 +377,6 @@ struct BubbleChart: View {
                                  yRange: ClosedRange<Double>) -> [ChartLabelPlacement] {
         guard plotRect.width > 0, plotRect.height > 0 else { return [] }
         let hitArea = plotRect.insetBy(dx: -4, dy: -4)
-        let labelHeight = Self.measuredLabelHeight()
         let maxLabelWidth = max(1, plotRect.width - 12)
         return models.compactMap { model -> ChartLabelPlacement? in
             guard let intelligence = model.intelligence else { return nil }
@@ -350,12 +385,15 @@ struct BubbleChart: View {
             let anchor = CGPoint(x: plotRect.minX + CGFloat(x) * plotRect.width,
                                  y: plotRect.minY + CGFloat(y) * plotRect.height)
             guard hitArea.contains(anchor) else { return nil }
+            let isFavorite = favoriteModelIDs.contains(model.id)
             let name = shortModelName(model.name)
             let radius = metrics.bubbleRadius(for: model)
+            let labelHeight = Self.measuredLabelHeight()
+            let labelWidth = min(Self.measuredLabelWidth(name), maxLabelWidth)
             let frame = CGRect(x: anchor.x + radius + 4, y: anchor.y - labelHeight / 2,
-                               width: min(Self.measuredLabelWidth(name), maxLabelWidth), height: labelHeight)
+                               width: labelWidth, height: labelHeight)
             return ChartLabelPlacement(id: model.id, name: name, color: creatorColor(model.modelCreator.name),
-                                       radius: radius, anchor: anchor, frame: frame)
+                                       isFavorite: isFavorite, radius: radius, anchor: anchor, frame: frame)
         }
     }
 
@@ -390,7 +428,8 @@ struct BubbleChart: View {
 
     private static func measureLabels(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
                                       scale: CGFloat, featured: Set<String>) -> LabelLayoutInput {
-        let area = plotRect.insetBy(dx: -16, dy: -24)
+        let area = CGRect(x: plotRect.minX - 16, y: plotRect.minY - 24,
+                          width: plotRect.width + 20, height: plotRect.height + 48)
         let hitArea = plotRect.insetBy(dx: -4, dy: -4)
         let visibleBubbles = candidates.filter { hitArea.contains($0.anchor) }
         let baseStep = (visibleBubbles.first?.frame.height ?? 0) + 2
@@ -523,8 +562,8 @@ struct BubbleChart: View {
                 let spanMaxX = isLeft ? item.anchor.x : maxX
 
                 var penalty: CGFloat = (isLeft ? 100 : 0) + (labelFontSize - fontSize) * 45
-                if minX < area.minX { penalty += 1000 + (area.minX - minX) }
-                if maxX > area.maxX { penalty += 1000 + (maxX - area.maxX) }
+                if minX < area.minX { penalty += 10_000 + (area.minX - minX) * 10 }
+                if maxX > area.maxX { penalty += 10_000 + (maxX - area.maxX) * 10 }
 
                 var lo = minCenterY
                 var hi = maxCenterY
@@ -800,6 +839,7 @@ nonisolated struct ChartLabelPlacement: Identifiable, Sendable {
     let name: String
     var color: Color = ink
     var fontSize: CGFloat = 12
+    var isFavorite: Bool = false
     let radius: CGFloat
     let anchor: CGPoint
     var frame: CGRect
@@ -851,7 +891,7 @@ private struct ChartMetrics {
         return 28 + 650 * (speed / maxSpeed)
     }
 
-    func bubbleRadius(for model: AIModel) -> CGFloat { sqrt(bubbleSize(for: model)) / 2 }
+    func bubbleRadius(for model: AIModel) -> CGFloat { sqrt(bubbleSize(for: model) / .pi) }
 }
 
 nonisolated private struct LabelLayoutInput: Sendable {
@@ -869,6 +909,15 @@ private struct LabelLayoutKey: Equatable {
     let missingPriceX: Double
     let maxSpeed: Double
     let models: [LabelModel]
+
+    func hasSameViewport(as other: LabelLayoutKey) -> Bool {
+        plotRect == other.plotRect &&
+        scale == other.scale &&
+        xBounds == other.xBounds &&
+        yBounds == other.yBounds &&
+        missingPriceX == other.missingPriceX &&
+        maxSpeed == other.maxSpeed
+    }
 }
 
 private struct LabelModel: Equatable {
@@ -878,6 +927,7 @@ private struct LabelModel: Equatable {
     let cost: Double?
     let intelligence: Double?
     let speed: Double?
+    let isFavorite: Bool
 }
 
 private struct ResolvedChartLabels {

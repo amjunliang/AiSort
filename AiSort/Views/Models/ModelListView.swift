@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ModelListView: View {
     let models: [AIModel]
+    let favoriteModelIDs: Set<String>
     @Binding var search: String
     @Binding var sort: ModelSort
     let selectModel: (AIModel) -> Void
@@ -46,7 +47,7 @@ struct ModelListView: View {
                     ForEach(visibleModels) { model in
                         Button {
                             selectModel(model)
-                        } label: { ModelRow(model: model) }.buttonStyle(.plain)
+                        } label: { ModelRow(model: model, isFavorite: favoriteModelIDs.contains(model.id)) }.buttonStyle(.plain)
                         Divider()
                     }
                 }

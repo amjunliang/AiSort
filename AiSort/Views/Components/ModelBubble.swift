@@ -2,10 +2,12 @@ import SwiftUI
 
 struct ModelBubble: View {
     let model: AIModel
+    let isFavorite: Bool
     let width: CGFloat
     let showsName: Bool
     let pointsUp: Bool
     let tailCenterX: CGFloat
+    let toggleFavorite: () -> Void
     let showDetail: () -> Void
     let dismiss: () -> Void
 
@@ -37,6 +39,13 @@ struct ModelBubble: View {
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 2)
+                        Button(action: toggleFavorite) {
+                            Image(systemName: isFavorite ? "star.fill" : "star")
+                                .foregroundStyle(teal)
+                                .frame(width: 24, height: 24)
+                        }
+                        .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
+                        .help(isFavorite ? "取消收藏" : "收藏")
                         Button(action: showDetail) {
                             Image(systemName: "info.circle")
                                 .frame(width: 24, height: 24)
@@ -56,6 +65,12 @@ struct ModelBubble: View {
                     compactMetric("混合单价", dollars(model.cost))
                     compactMetric("速度", number(model.speed, digits: 0))
                     if !showsName {
+                        Button(action: toggleFavorite) {
+                            Image(systemName: isFavorite ? "star.fill" : "star")
+                                .foregroundStyle(teal)
+                                .frame(width: 24, height: 24)
+                        }
+                        .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
                         Button(action: dismiss) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 14, weight: .bold))

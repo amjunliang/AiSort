@@ -10,14 +10,30 @@ struct ContentView: View {
     @State private var highlighted: AIModel?
     @State private var sort = ModelSort.intelligence
     @State private var showsChinaOnly = false
+    @State private var showsFavoritesOnly = false
     @State private var showModels = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var isChartZooming = false
     @State private var focusRequest: String?
 
-    private var visibleModels: [AIModel] {
+    private var regionFilteredModels: [AIModel] {
         showsChinaOnly ? store.filtered.filter { CreatorRegion.china.includes($0.modelCreator) } : store.filtered
+    }
+    private var availableEfforts: [ReasoningEffort] {
+        let present = Set(regionFilteredModels.map(\.reasoningEffort))
+        return ReasoningEffort.allCases.filter { present.contains($0) || store.selectedReasoningEfforts.contains($0) }
+    }
+    private var effortFilteredModels: [AIModel] {
+        store.selectedReasoningEfforts.isEmpty
+            ? regionFilteredModels
+            : regionFilteredModels.filter { store.selectedReasoningEfforts.contains($0.reasoningEffort) }
+    }
+    private var favoriteCountInScope: Int {
+        effortFilteredModels.filter { store.isFavorite($0.id) }.count
+    }
+    private var visibleModels: [AIModel] {
+        showsFavoritesOnly ? effortFilteredModels.filter { store.isFavorite($0.id) } : effortFilteredModels
     }
     private var plotted: [AIModel] { visibleModels.filter(\.isPlottable) }
     private var plottedCreators: [String] {
@@ -59,16 +75,37 @@ struct ContentView: View {
             }) {
                 NavigationStack {
                     ScrollView {
-                        ModelListView(models: visibleModels, search: $search, sort: $sort, selectModel: selectModel)
+                        ModelListView(models: visibleModels, favoriteModelIDs: store.favoriteModelIDs,
+                                      search: $search, sort: $sort, selectModel: selectModel)
                             .padding()
                     }
                         .navigationTitle("模型列表")
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModels = false } } }
                 }.frame(minWidth: 320, minHeight: 400)
             }
-            .sheet(item: $selected) { ModelDetail(model: $0, version: store.indexVersion) }
+            .sheet(item: $selected) { model in
+                ModelDetail(model: model, version: store.indexVersion,
+                            isFavorite: store.isFavorite(model.id),
+                            toggleFavorite: { store.toggleFavorite(model.id) })
+            }
             .onChange(of: store.canvasResetVersion) { _, _ in resetCanvas() }
             .onChange(of: showsChinaOnly) { _, _ in
+                highlighted = nil
+                focusRequest = nil
+            }
+            .onChange(of: showsFavoritesOnly) { _, _ in
+                highlighted = nil
+                focusRequest = nil
+            }
+            .onChange(of: store.favoriteModelIDs) { _, ids in
+                if ids.isEmpty && showsFavoritesOnly {
+                    showsFavoritesOnly = false
+                }
+                if showsFavoritesOnly, let current = highlighted, !ids.contains(current.id) {
+                    highlighted = nil
+                }
+            }
+            .onChange(of: store.selectedReasoningEfforts) { _, _ in
                 highlighted = nil
                 focusRequest = nil
             }
@@ -93,8 +130,12 @@ struct ContentView: View {
                         .padding(.horizontal, 16).padding(.top, 10)
                 }
                 if store.updatedAt != nil {
-                    OverviewHeader(count: visibleModels.count, updatedAt: store.updatedAt, rateLimit: store.activeRateLimit,
-                                   showsChinaOnly: $showsChinaOnly)
+                    OverviewHeader(count: visibleModels.count, favoriteCount: favoriteCountInScope,
+                                   updatedAt: store.updatedAt, rateLimit: store.activeRateLimit,
+                                   availableEfforts: availableEfforts,
+                                   selectedEfforts: store.selectedReasoningEfforts,
+                                   toggleEffort: store.toggleReasoningEffort,
+                                   showsChinaOnly: $showsChinaOnly, showsFavoritesOnly: $showsFavoritesOnly)
                     if plotted.isEmpty {
                         ContentUnavailableView {
                             Label("暂无可绘制的模型", systemImage: "chart.xyaxis.line")
@@ -109,8 +150,10 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ChartCanvas(models: plotted, scaleModels: store.filtered.filter(\.isPlottable),
+                                    favoriteModelIDs: store.favoriteModelIDs,
                                     highlighted: $highlighted, focusRequest: $focusRequest,
                                     offset: $offset, scale: $scale, isZooming: $isChartZooming,
+                                    toggleFavorite: { store.toggleFavorite($0.id) },
                                     showDetail: { selected = $0 })
                             .frame(minHeight: max(280, minHeight * 0.5))
                     }

@@ -25,6 +25,8 @@ final class ModelController: ObservableObject {
     @Published var notice: String?
     @Published var hasKey: Bool
     @Published var selectedCreators: Set<String> = []
+    @Published private(set) var favoriteModelIDs: Set<String> = []
+    @Published private(set) var selectedReasoningEfforts: Set<ReasoningEffort> = []
     @Published private(set) var scoreFilter = ScoreFilter()
     @Published private(set) var canvasResetVersion = 0
     @Published private(set) var rateLimit: RateLimit?
@@ -33,6 +35,8 @@ final class ModelController: ObservableObject {
     private var didRefreshOnLaunch = false
     private var isSilentRefresh = false
     private let filterKey = "creatorFilterSelection"
+    private let favoritesKey = "favoriteModelIDs"
+    private let reasoningEffortKey = "reasoningEffortFilter"
     private let scoreFilterKey = "intelligenceScoreFilter"
     private var generation = 0
     private let api: ModelAPI
@@ -62,6 +66,8 @@ final class ModelController: ObservableObject {
         pagesPerRefresh = defaults.object(forKey: pagesKey) as? Int
         self.allSelected = defaults.object(forKey: "creatorFilterAll") as? Bool ?? true
         selectedCreators = Set(defaults.stringArray(forKey: filterKey) ?? [])
+        favoriteModelIDs = Set(defaults.stringArray(forKey: favoritesKey) ?? [])
+        selectedReasoningEfforts = Set((defaults.stringArray(forKey: reasoningEffortKey) ?? []).compactMap(ReasoningEffort.init(rawValue:)))
         let scoreBounds = defaults.dictionary(forKey: scoreFilterKey)
         scoreFilter = ScoreFilter(minimum: scoreBounds?["minimum"] as? Double, maximum: scoreBounds?["maximum"] as? Double)
         loadCache()
@@ -90,6 +96,25 @@ final class ModelController: ObservableObject {
         allSelected = Set(creators).isSubset(of: selectedCreators) && !creators.isEmpty
         saveFilter()
         canvasResetVersion += 1
+    }
+    func isFavorite(_ modelID: String) -> Bool {
+        favoriteModelIDs.contains(modelID)
+    }
+    func toggleFavorite(_ modelID: String) {
+        if favoriteModelIDs.contains(modelID) {
+            favoriteModelIDs.remove(modelID)
+        } else {
+            favoriteModelIDs.insert(modelID)
+        }
+        defaults.set(Array(favoriteModelIDs).sorted(), forKey: favoritesKey)
+    }
+    func toggleReasoningEffort(_ effort: ReasoningEffort) {
+        if selectedReasoningEfforts.contains(effort) {
+            selectedReasoningEfforts.remove(effort)
+        } else {
+            selectedReasoningEfforts.insert(effort)
+        }
+        defaults.set(selectedReasoningEfforts.map(\.rawValue).sorted(), forKey: reasoningEffortKey)
     }
     func saveKey(_ value: String) async {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -92,6 +92,43 @@ struct AIModel: Codable, Identifiable {
     }
     // log(1 + cost) retains zero and compresses the wide range of prices.
     var chartCost: Double? { cost.map { log10(1 + $0) } }
+
+    var reasoningEffort: ReasoningEffort {
+        ReasoningEffort.parse(from: name)
+    }
+}
+
+enum ReasoningEffort: String, CaseIterable, Codable, Hashable, Identifiable {
+    case max = "Max"
+    case xhigh = "XHigh"
+    case high = "High"
+    case medium = "Med"
+    case low = "Low"
+    case min = "Min"
+    case none = "无档位"
+
+    var id: String { rawValue }
+
+    static func parse(from modelName: String) -> ReasoningEffort {
+        var searchStart = modelName.startIndex
+        while let open = modelName[searchStart...].firstIndex(of: "("),
+              let close = modelName[modelName.index(after: open)...].firstIndex(of: ")") {
+            let inside = modelName[modelName.index(after: open)..<close]
+            for token in inside.split(separator: ",") {
+                switch token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "max", "maximum": return .max
+                case "xhigh", "extra high": return .xhigh
+                case "high": return .high
+                case "medium", "med": return .medium
+                case "low": return .low
+                case "min", "minimum", "minimal": return .min
+                default: break
+                }
+            }
+            searchStart = modelName.index(after: close)
+        }
+        return .none
+    }
 }
 
 enum CreatorRegion: String, CaseIterable {

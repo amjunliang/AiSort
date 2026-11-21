@@ -4,11 +4,13 @@ struct ChartCanvas: View {
     private let chartPadding: CGFloat = 20
     let models: [AIModel]
     let scaleModels: [AIModel]
+    let favoriteModelIDs: Set<String>
     @Binding var highlighted: AIModel?
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
     @Binding var scale: CGFloat
     @Binding var isZooming: Bool
+    let toggleFavorite: (AIModel) -> Void
     let showDetail: (AIModel) -> Void
     @State private var dragOrigin: CGSize?
     @State private var zoomOrigin: (CGFloat, CGSize)?
@@ -18,11 +20,13 @@ struct ChartCanvas: View {
         let labelPanAllowance = CGFloat(scaleModels.lazy.map { $0.name.count }.max() ?? 0) * 14 + 40
         GeometryReader { geometry in
             ZStack {
-                BubbleChart(models: models, scaleModels: scaleModels, highlighted: $highlighted,
+                BubbleChart(models: models, scaleModels: scaleModels, favoriteModelIDs: favoriteModelIDs,
+                            highlighted: $highlighted,
                             focusRequest: $focusRequest, offset: $offset, scale: scale,
                             viewportSize: geometry.size,
                             extraHorizontalPan: scale >= 1.5 ? labelPanAllowance : 0,
                             isInteracting: dragOrigin != nil || zoomOrigin != nil,
+                            toggleFavorite: toggleFavorite,
                             showDetail: showDetail)
                     .padding(.vertical, chartPadding)
                     .padding(.horizontal, 6)

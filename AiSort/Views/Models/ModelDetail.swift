@@ -3,6 +3,8 @@ import SwiftUI
 struct ModelDetail: View {
     let model: AIModel
     let version: Double?
+    let isFavorite: Bool
+    let toggleFavorite: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -60,7 +62,16 @@ struct ModelDetail: View {
                     Link("在 Artificial Analysis 查看 ↗", destination: URL(string: "https://artificialanalysis.ai/models/\(model.slug)")!)
                 }.padding(22).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
             }.background(Color(red: 0.965, green: 0.972, blue: 0.962))
-                .navigationTitle("模型详情").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .navigationTitle("模型详情").toolbar {
+                    ToolbarItem(placement: .automatic) {
+                        Button(action: toggleFavorite) {
+                            Label(isFavorite ? "已收藏" : "收藏", systemImage: isFavorite ? "star.fill" : "star")
+                        }
+                        .tint(teal)
+                        .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
+                    }
+                    ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                }
         }.frame(minWidth: 320, minHeight: 400)
     }
     private func detailCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
