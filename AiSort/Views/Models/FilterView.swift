@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FilterView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var store: ModelController
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
@@ -81,7 +82,7 @@ struct FilterView: View {
                             ForEach(matchingCreators, id: \.self) { creator in
                                 Button { store.toggleCreator(creator) } label: {
                                     HStack {
-                                        Circle().fill(creatorColor(creator)).frame(width: 10, height: 10)
+                                        Circle().fill(creatorColor(creator, in: colorScheme)).frame(width: 10, height: 10)
                                         Text(creator).foregroundStyle(.primary)
                                         Spacer()
                                         if store.selectedCreators.contains(creator) {

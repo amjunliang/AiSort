@@ -8,6 +8,7 @@ import UIKit
 #endif
 
 struct BubbleChart: View {
+    @Environment(\.colorScheme) private var colorScheme
     let models: [AIModel]
     let scaleModels: [AIModel]
     let favoriteModelIDs: Set<String>
@@ -89,6 +90,9 @@ struct BubbleChart: View {
         let showsEveryIntelligenceValue = Double(max(0, viewportSize.height - 80)) / ySpan >= 26
 
         let orderedModels = models.sorted {
+            let favA = favoriteModelIDs.contains($0.id)
+            let favB = favoriteModelIDs.contains($1.id)
+            if favA != favB { return !favA && favB }
             let sizeA = metrics.bubbleSize(for: $0)
             let sizeB = metrics.bubbleSize(for: $1)
             if sizeA != sizeB { return sizeA > sizeB }
@@ -98,14 +102,42 @@ struct BubbleChart: View {
         Chart {
             ForEach(orderedModels) { model in
                 if let intelligence = model.intelligence {
-                    let color = creatorColor(model.modelCreator.name).opacity(0.96)
+                    let isFavorite = favoriteModelIDs.contains(model.id)
+                    let color = creatorColor(model.modelCreator.name, in: colorScheme).opacity(0.96)
                     let point = PointMark(x: .value("成本", metrics.x(for: model)), y: .value("智力指数", intelligence))
-                    if let cost = model.cost {
+                    let diameter = 2 * metrics.bubbleRadius(for: model)
+                    if isFavorite {
+                        let starSize = max(4.8, diameter * 0.52)
+                        if let cost = model.cost {
+                            point.symbol {
+                                ZStack {
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: diameter, height: diameter)
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: starSize, weight: .bold))
+                                        .foregroundStyle(colorScheme == .dark ? appBackground : .white)
+                                }
+                            }
+                            .accessibilityLabel("已收藏，\(model.name)，智力 \(number(intelligence))，3比1混合单价 \(dollars(cost)) 美元每百万 token，速度 \(number(model.chartSpeed))")
+                        } else {
+                            point.symbol {
+                                ZStack {
+                                    Circle()
+                                        .strokeBorder(color, lineWidth: 1.8)
+                                        .frame(width: diameter, height: diameter)
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: min(10, max(5, diameter * 0.45)), weight: .bold))
+                                        .foregroundStyle(color)
+                                }
+                            }
+                            .accessibilityLabel("已收藏，\(model.name)，智力 \(number(intelligence))，暂无报价，速度 \(model.chartSpeed.map { number($0) } ?? "暂无数据")")
+                        }
+                    } else if let cost = model.cost {
                         point.symbolSize(metrics.bubbleSize(for: model))
                             .foregroundStyle(color)
                             .accessibilityLabel("\(model.name)，智力 \(number(intelligence))，3比1混合单价 \(dollars(cost)) 美元每百万 token，速度 \(number(model.chartSpeed))")
                     } else {
-                        let diameter = 2 * metrics.bubbleRadius(for: model)
                         point.symbol {
                             Circle().strokeBorder(color, lineWidth: 1.8).frame(width: diameter, height: diameter)
                         }
@@ -274,7 +306,7 @@ struct BubbleChart: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(teal, in: RoundedRectangle(cornerRadius: 4))
+                .background(tealFill, in: RoundedRectangle(cornerRadius: 4))
                 .fixedSize()
                 .position(x: plotRect.minX + 24, y: anchor.y)
         }
@@ -301,42 +333,26 @@ struct BubbleChart: View {
         return ZStack(alignment: .topLeading) {
             ForEach(orderedLabels) { label in
                 let emphasized = primary.contains(label.id) || featured.contains(label.id)
+                let color = creatorColor(label.creator, in: colorScheme)
                 leaderLine(for: label)
-                    .stroke(emphasized ? label.color.opacity(0.62) : label.color.mix(with: ink, by: 0.25).opacity(0.24),
+                    .stroke(emphasized ? color.opacity(0.62) : color.mix(with: ink, by: 0.25).opacity(0.24),
                             lineWidth: emphasized ? 1.0 : 0.75)
             }
             ForEach(orderedLabels) { label in
-                if label.isFavorite {
-                    let color = label.color.opacity(0.98)
-                    Text(label.name)
-                        .font(.system(size: label.fontSize, weight: .semibold))
-                        .tracking(Self.labelTracking)
-                        .foregroundStyle(color)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 0.5)
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(label.color.opacity(0.45), lineWidth: 0.5)
-                        }
-                        .frame(width: label.frame.width,
-                               alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
-                        .offset(x: label.frame.minX, y: label.frame.minY)
-                } else {
-                    let emphasized = primary.contains(label.id) || featured.contains(label.id)
-                    let color = emphasized ? label.color.opacity(0.98)
-                        : label.color.mix(with: ink, by: 0.35).opacity(label.fontSize < Self.labelFontSize ? 0.68 : 0.74)
-                    Text(label.name)
-                        .font(.system(size: label.fontSize, weight: emphasized ? .semibold : .regular))
-                        .tracking(Self.labelTracking)
-                        .foregroundStyle(color)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .frame(width: label.frame.width,
-                               alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
-                        .offset(x: label.frame.minX, y: label.frame.minY)
-                }
+                let emphasized = primary.contains(label.id) || featured.contains(label.id)
+                let creatorTint = creatorColor(label.creator, in: colorScheme)
+                let opacity = label.fontSize < Self.labelFontSize ? 0.68 : 0.74
+                let color = emphasized ? creatorTint.opacity(0.98)
+                    : creatorTint.mix(with: ink, by: 0.35).opacity(colorScheme == .dark ? 0.9 : opacity)
+                Text(label.name)
+                    .font(.system(size: label.fontSize, weight: emphasized ? .semibold : .regular))
+                    .tracking(Self.labelTracking)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .frame(width: label.frame.width,
+                           alignment: label.frame.maxX < label.anchor.x ? .trailing : .leading)
+                    .offset(x: label.frame.minX, y: label.frame.minY)
             }
         }
         .mask(alignment: .topLeading) {
@@ -392,7 +408,7 @@ struct BubbleChart: View {
             let labelWidth = min(Self.measuredLabelWidth(name), maxLabelWidth)
             let frame = CGRect(x: anchor.x + radius + 4, y: anchor.y - labelHeight / 2,
                                width: labelWidth, height: labelHeight)
-            return ChartLabelPlacement(id: model.id, name: name, color: creatorColor(model.modelCreator.name),
+            return ChartLabelPlacement(id: model.id, name: name, creator: model.modelCreator.name,
                                        isFavorite: isFavorite, radius: radius, anchor: anchor, frame: frame)
         }
     }
@@ -555,13 +571,13 @@ struct BubbleChart: View {
             }
             let gap = clearanceRadius + 5
 
-            for isLeft in [false, true] {
+            for isLeft in [true, false] {
                 let minX = isLeft ? item.anchor.x - gap - size.width : item.anchor.x + gap
                 let maxX = isLeft ? item.anchor.x - gap : item.anchor.x + gap + size.width
                 let spanMinX = isLeft ? minX : item.anchor.x
                 let spanMaxX = isLeft ? item.anchor.x : maxX
 
-                var penalty: CGFloat = (isLeft ? 100 : 0) + (labelFontSize - fontSize) * 45
+                var penalty: CGFloat = (isLeft ? 0 : 100) + (labelFontSize - fontSize) * 45
                 if minX < area.minX { penalty += 10_000 + (area.minX - minX) * 10 }
                 if maxX > area.maxX { penalty += 10_000 + (maxX - area.maxX) * 10 }
 
@@ -837,7 +853,7 @@ nonisolated struct ChartLabelLayout: Equatable, Sendable {
 nonisolated struct ChartLabelPlacement: Identifiable, Sendable {
     let id: String
     let name: String
-    var color: Color = ink
+    var creator: String = ""
     var fontSize: CGFloat = 12
     var isFavorite: Bool = false
     let radius: CGFloat

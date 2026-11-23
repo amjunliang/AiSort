@@ -27,12 +27,12 @@ struct WelcomeView: View {
                 if hasKey {
                     Button(action: refresh) {
                         Label("重试获取数据", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                    }.buttonStyle(.borderedProminent).tint(tealFill).controlSize(.large)
                     Button("检查 API Key 设置") { showSettings() }.font(.appSubheadline)
                 } else {
                     Button { showSettings() } label: {
                         Label("设置 API Key", systemImage: "key.horizontal").frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).controlSize(.large)
+                    }.buttonStyle(.borderedProminent).tint(tealFill).controlSize(.large)
                     Link("获取 Artificial Analysis API Key ↗", destination: URL(string: "https://artificialanalysis.ai/data-api")!).font(.appSubheadline)
                 }
             }

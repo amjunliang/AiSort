@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ModelBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
     let model: AIModel
     let isFavorite: Bool
     let width: CGFloat
@@ -25,7 +26,7 @@ struct ModelBubble: View {
                 if showsName {
                     HStack(spacing: 7) {
                         Circle()
-                            .fill(creatorColor(model.modelCreator.name))
+                            .fill(creatorColor(model.modelCreator.name, in: colorScheme))
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(model.name)
@@ -95,7 +96,7 @@ struct ModelBubble: View {
         .frame(width: width)
         .background {
             BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: Self.tailSize)
-                .fill(.white)
+                .fill(appSurface)
                 .overlay {
                     BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: Self.tailSize)
                         .stroke(teal.opacity(0.2), lineWidth: 1)

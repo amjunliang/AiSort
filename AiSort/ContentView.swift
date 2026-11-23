@@ -61,12 +61,12 @@ struct ContentView: View {
                                   hasMissingPrices: plotted.contains { $0.cost == nil },
                                   creators: plottedCreators,
                                   scale: $scale, offset: $offset, resetCanvas: resetCanvas)
-                        .background(Color(red: 0.965, green: 0.972, blue: 0.962))
+                        .background(appBackground)
                         .zIndex(1)
                 }
             }
             .coordinateSpace(name: "overviewViewport")
-            .background(Color(red: 0.965, green: 0.972, blue: 0.962).ignoresSafeArea())
+            .background(appBackground.ignoresSafeArea())
             .toolbar(.hidden)
             .sheet(isPresented: $showSettings) { SettingsView(store: store) }
             .sheet(isPresented: $showFilters) { FilterView(store: store) }
@@ -113,7 +113,7 @@ struct ContentView: View {
                 let request = Task { await store.refreshOnLaunch() }
                 await request.value
             }
-        }.tint(teal).font(.appBody).preferredColorScheme(.light)
+        }.tint(teal).font(.appBody)
     }
 
     private func scrollContent(minHeight: CGFloat) -> some View {
@@ -142,7 +142,7 @@ struct ContentView: View {
                         } description: {
                             Text(visibleModels.isEmpty ? "当前筛选条件下没有模型。" : "当前模型缺少绘图所需的指标。")
                         } actions: {
-                            Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent)
+                            Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent).tint(tealFill)
                             if !visibleModels.isEmpty {
                                 Button("查看模型列表") { showModels = true }
                             }

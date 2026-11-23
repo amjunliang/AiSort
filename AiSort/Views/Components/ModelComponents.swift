@@ -12,12 +12,13 @@ struct MetricValue: View {
 }
 
 struct ModelRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let model: AIModel
     var isFavorite: Bool = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Circle().fill(creatorColor(model.modelCreator.name)).frame(width: 8, height: 8)
+                Circle().fill(creatorColor(model.modelCreator.name, in: colorScheme)).frame(width: 8, height: 8)
                 Text(model.name).font(.appSubheadline.weight(.semibold)).foregroundStyle(ink).lineLimit(1)
                 if isFavorite {
                     Image(systemName: "star.fill")

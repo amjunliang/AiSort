@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ModelDetail: View {
+    @Environment(\.colorScheme) private var colorScheme
     let model: AIModel
     let version: Double?
     let isFavorite: Bool
@@ -11,7 +12,7 @@ struct ModelDetail: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack {
-                        Circle().fill(creatorColor(model.modelCreator.name)).frame(width: 12, height: 12)
+                        Circle().fill(creatorColor(model.modelCreator.name, in: colorScheme)).frame(width: 12, height: 12)
                         Text(model.modelCreator.name).font(.appSubheadline.weight(.medium)).foregroundStyle(.secondary)
                         Text(model.modelCreator.region?.rawValue ?? "未分类")
                             .font(.appCaption.weight(.semibold)).foregroundStyle(teal)
@@ -61,7 +62,7 @@ struct ModelDetail: View {
                         .font(.appCaption).foregroundStyle(.secondary)
                     Link("在 Artificial Analysis 查看 ↗", destination: URL(string: "https://artificialanalysis.ai/models/\(model.slug)")!)
                 }.padding(22).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
-            }.background(Color(red: 0.965, green: 0.972, blue: 0.962))
+            }.background(appBackground)
                 .navigationTitle("模型详情").toolbar {
                     ToolbarItem(placement: .automatic) {
                         Button(action: toggleFavorite) {

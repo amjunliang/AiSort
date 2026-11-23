@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ChartControls: View {
+    @Environment(\.colorScheme) private var colorScheme
     let hasModels: Bool
     let hasMissingPrices: Bool
     let creators: [String]
@@ -25,17 +26,17 @@ struct ChartControls: View {
                     Button { withAnimation(.easeInOut(duration: 0.2)) { scale = min(5, scale * 1.25) } } label: {
                         Image(systemName: "plus").frame(width: 36, height: 36)
                     }.disabled(scale >= 5).accessibilityLabel("放大")
-                }.buttonStyle(.plain).background(.white, in: Capsule())
+                }.buttonStyle(.plain).background(appSurface, in: Capsule())
                 Button { withAnimation(.easeInOut(duration: 0.2)) { resetCanvas() } } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 36)
-                }.buttonStyle(.plain).background(.white, in: Circle()).accessibilityLabel("重置图表")
+                }.buttonStyle(.plain).background(appSurface, in: Circle()).accessibilityLabel("重置图表")
             }
             if hasModels {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(creators, id: \.self) { creator in
                             HStack(spacing: 5) {
-                                Circle().fill(creatorColor(creator)).frame(width: 7, height: 7)
+                                Circle().fill(creatorColor(creator, in: colorScheme)).frame(width: 7, height: 7)
                                 Text(creator).font(.appCaption2).lineLimit(1)
                             }.padding(.vertical, 6)
                         }

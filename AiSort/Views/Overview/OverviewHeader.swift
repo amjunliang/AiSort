@@ -41,7 +41,7 @@ struct OverviewHeader: View {
                             .fixedSize()
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(showsChinaOnly ? teal : teal.opacity(0.09), in: Capsule())
+                            .background(showsChinaOnly ? tealFill : teal.opacity(0.09), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(showsChinaOnly ? .isSelected : [])
@@ -61,7 +61,7 @@ struct OverviewHeader: View {
                             .fixedSize()
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(showsFavoritesOnly ? teal : teal.opacity(0.09), in: Capsule())
+                            .background(showsFavoritesOnly ? tealFill : teal.opacity(0.09), in: Capsule())
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(showsFavoritesOnly ? .isSelected : [])
@@ -85,7 +85,7 @@ struct OverviewHeader: View {
                                     .fixedSize()
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(isSelected ? teal : teal.opacity(0.09), in: Capsule())
+                                    .background(isSelected ? tealFill : teal.opacity(0.09), in: Capsule())
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(isSelected ? .isSelected : [])

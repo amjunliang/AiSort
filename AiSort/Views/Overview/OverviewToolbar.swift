@@ -13,7 +13,7 @@ struct OverviewToolbar: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 34, height: 34)
-                    .background(teal, in: RoundedRectangle(cornerRadius: 10))
+                    .background(tealFill, in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("AI SORT").font(.appSubheadline.bold()).tracking(0.8)
                     Text("模型探索").font(.appCaption2).foregroundStyle(.secondary)
@@ -48,7 +48,7 @@ struct OverviewToolbar: View {
         .buttonStyle(.plain)
         .foregroundStyle(ink)
         .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(.white)
+        .background(appSurface)
     }
 
 }
