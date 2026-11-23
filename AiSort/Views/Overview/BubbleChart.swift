@@ -26,6 +26,7 @@ struct BubbleChart: View {
     nonisolated private static let labelFontSize: CGFloat = 12
     nonisolated private static let labelFontSizes: [CGFloat] = [12, 10, 9, 8.5]
     private static let labelTracking: CGFloat = -0.35
+    private static let intelligenceAxisLabelWidth: CGFloat = 44
     private func visibleFrontierIDs(metrics: ChartMetrics, xRange: ClosedRange<Double>,
                                     yRange: ClosedRange<Double>) -> Set<String> {
         let visibleModels = models.filter { model in
@@ -87,7 +88,20 @@ struct BubbleChart: View {
         let lower = ceil(visibleYBounds.lowerBound), upper = floor(visibleYBounds.upperBound)
         let intelligenceTicks = lower <= upper ? Array(stride(from: lower, through: upper, by: 1)) : []
         let ySpan = visibleYBounds.upperBound - visibleYBounds.lowerBound
-        let showsEveryIntelligenceValue = Double(max(0, viewportSize.height - 80)) / ySpan >= 26
+        let pointsPerIntelligence = Double(max(0, viewportSize.height - 80)) / ySpan
+        let showsEveryIntelligenceValue = pointsPerIntelligence >= 26
+        let highestModel = models.max { lhs, rhs in
+            let lhsScore = lhs.intelligence ?? -.infinity
+            let rhsScore = rhs.intelligence ?? -.infinity
+            if lhsScore != rhsScore { return lhsScore < rhsScore }
+            let lhsX = metrics.x(for: lhs)
+            let rhsX = metrics.x(for: rhs)
+            if lhsX != rhsX { return lhsX > rhsX }
+            return lhs.id > rhs.id
+        }
+        let highestScore = highestModel?.intelligence
+        let highestScoreTicks = highestScore.map { visibleYBounds.contains($0) ? [$0] : [] } ?? []
+        let highestColor = highestModel.map { creatorColor($0.modelCreator.name, in: colorScheme) } ?? teal
 
         let orderedModels = models.sorted {
             let favA = favoriteModelIDs.contains($0.id)
@@ -166,12 +180,29 @@ struct BubbleChart: View {
                 let isMajor = Int(score).isMultiple(of: 5)
                 AxisGridLine()
                     .foregroundStyle(ink.opacity(isMajor ? 0.14 : 0.045))
-                if isMajor || showsEveryIntelligenceValue {
+                let overlapsHighestScore = highestScoreTicks.contains {
+                    abs(score - $0) * pointsPerIntelligence < 24
+                }
+                if (isMajor || showsEveryIntelligenceValue) && !overlapsHighestScore {
                     AxisTick().foregroundStyle(ink.opacity(isMajor ? 0.3 : 0.12))
                     AxisValueLabel {
                         Text(score, format: .number.precision(.fractionLength(0)))
                             .font(.appCaption.monospacedDigit())
-                            .frame(width: 30, alignment: .leading)
+                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .leading)
+                    }
+                }
+            }
+            AxisMarks(position: .leading, values: highestScoreTicks) { value in
+                AxisTick(length: 6).foregroundStyle(highestColor)
+                AxisValueLabel(collisionResolution: .disabled) {
+                    if let score = value.as(Double.self) {
+                        Text(number(score))
+                            .font(.appCaption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(highestColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .leading)
+                            .accessibilityLabel("最高智力指数 \(number(score))")
                     }
                 }
             }
@@ -245,11 +276,28 @@ struct BubbleChart: View {
                             }
                         })
 
-                    if !isInteracting, let frame = proxy.plotFrame {
-                        modelLabels(plotRect: geo[frame], metrics: metrics,
-                                    xRange: visibleXBounds, yRange: visibleYBounds)
+                    if let frame = proxy.plotFrame {
+                        let plot = geo[frame]
+                        let guideEnd = highestModel.flatMap { model -> CGPoint? in
+                            let cost = metrics.x(for: model)
+                            guard visibleXBounds.contains(cost), let score = highestScoreTicks.first,
+                                  let x = proxy.position(forX: cost), let y = proxy.position(forY: score) else { return nil }
+                            return CGPoint(x: plot.minX + x - metrics.bubbleRadius(for: model), y: plot.minY + y)
+                        }
+                        let guideHighlighted = highestModel.map { $0.id == referenceModel?.id } ?? false
+                        if isInteracting {
+                            if let guideEnd {
+                                highestScoreGuide(from: plot.minX, to: guideEnd, avoiding: [],
+                                                  color: highestColor, highlighted: guideHighlighted)
+                            }
+                        } else {
+                            modelLabels(plotRect: plot, metrics: metrics,
+                                        xRange: visibleXBounds, yRange: visibleYBounds,
+                                        guideEnd: guideEnd, guideColor: highestColor,
+                                        guideHighlighted: guideHighlighted)
+                        }
                     }
-                    if let model = referenceModel, let score = model.intelligence,
+                    if let model = referenceModel, model.id != highestModel?.id, let score = model.intelligence,
                        let frame = proxy.plotFrame,
                        let x = proxy.position(forX: metrics.x(for: model)),
                        let y = proxy.position(forY: score) {
@@ -315,7 +363,8 @@ struct BubbleChart: View {
     }
 
     private func modelLabels(plotRect: CGRect, metrics: ChartMetrics,
-                             xRange: ClosedRange<Double>, yRange: ClosedRange<Double>) -> some View {
+                             xRange: ClosedRange<Double>, yRange: ClosedRange<Double>,
+                             guideEnd: CGPoint?, guideColor: Color, guideHighlighted: Bool) -> some View {
         let layoutKey = LabelLayoutKey(
             plotRect: plotRect, scale: scale, xBounds: xRange, yBounds: yRange,
             missingPriceX: metrics.missingPriceX, maxSpeed: metrics.maxSpeed,
@@ -331,6 +380,10 @@ struct BubbleChart: View {
         let primary = primaryModelIDs(frontier: resolvedLabels?.frontier ?? [])
         let featured = resolvedLabels?.featured ?? []
         return ZStack(alignment: .topLeading) {
+            if let guideEnd {
+                highestScoreGuide(from: plotRect.minX, to: guideEnd, avoiding: labels,
+                                  color: guideColor, highlighted: guideHighlighted)
+            }
             ForEach(orderedLabels) { label in
                 let emphasized = primary.contains(label.id) || featured.contains(label.id)
                 let color = creatorColor(label.creator, in: colorScheme)
@@ -387,6 +440,32 @@ struct BubbleChart: View {
             resolvedLabels = ResolvedChartLabels(key: layoutKey, placements: placements,
                                                  featured: featured, frontier: frontier)
         }
+    }
+
+    private func highestScoreGuide(from startX: CGFloat, to end: CGPoint,
+                                   avoiding labels: [ChartLabelPlacement], color: Color,
+                                   highlighted: Bool) -> some View {
+        Path { path in
+            let gaps = labels.map { $0.frame.insetBy(dx: -4, dy: -2) }
+                .filter { $0.minY <= end.y && end.y <= $0.maxY && $0.maxX > startX && $0.minX < end.x }
+                .sorted { $0.minX < $1.minX }
+            var x = startX
+            for gap in gaps {
+                if gap.minX > x {
+                    path.move(to: CGPoint(x: x, y: end.y))
+                    path.addLine(to: CGPoint(x: gap.minX, y: end.y))
+                }
+                x = max(x, gap.maxX)
+            }
+            if x < end.x {
+                path.move(to: CGPoint(x: x, y: end.y))
+                path.addLine(to: end)
+            }
+        }
+        .stroke(color.opacity(highlighted ? 0.65 : 0.35),
+                style: StrokeStyle(lineWidth: 1, dash: highlighted ? [4, 3] : []))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func labelCandidates(plotRect: CGRect, metrics: ChartMetrics, xRange: ClosedRange<Double>,

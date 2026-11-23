@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var store: ModelController
+    @Binding var appearance: AppAppearance
     @State private var showSettings = false
     @State private var showFilters = false
     @State private var selected: AIModel?
@@ -11,6 +12,7 @@ struct ContentView: View {
     @State private var sort = ModelSort.intelligence
     @State private var showsChinaOnly = false
     @State private var showsFavoritesOnly = false
+    @State private var chartCreator: String?
     @State private var showModels = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -21,23 +23,48 @@ struct ContentView: View {
         showsChinaOnly ? store.filtered.filter { CreatorRegion.china.includes($0.modelCreator) } : store.filtered
     }
     private var availableEfforts: [ReasoningEffort] {
-        let present = Set(regionFilteredModels.map(\.reasoningEffort))
-        return ReasoningEffort.allCases.filter { present.contains($0) || store.selectedReasoningEfforts.contains($0) }
+        let present = Set(regionFilteredModels.lazy.filter(\.isPlottable).map(\.reasoningEffort))
+        return ReasoningEffort.allCases.filter { present.contains($0) }
+    }
+    private var selectedEffort: ReasoningEffort? {
+        guard let effort = store.selectedReasoningEffort, availableEfforts.contains(effort) else { return nil }
+        return effort
     }
     private var effortFilteredModels: [AIModel] {
-        store.selectedReasoningEfforts.isEmpty
-            ? regionFilteredModels
-            : regionFilteredModels.filter { store.selectedReasoningEfforts.contains($0.reasoningEffort) }
+        guard let effort = selectedEffort else { return regionFilteredModels }
+        return regionFilteredModels.filter { $0.reasoningEffort == effort }
     }
     private var favoriteCountInScope: Int {
         effortFilteredModels.filter { store.isFavorite($0.id) }.count
     }
-    private var visibleModels: [AIModel] {
+    private var modelsBeforeChartCreator: [AIModel] {
         showsFavoritesOnly ? effortFilteredModels.filter { store.isFavorite($0.id) } : effortFilteredModels
+    }
+    private var visibleModels: [AIModel] {
+        let models = modelsBeforeChartCreator
+        guard let chartCreator, models.contains(where: { $0.modelCreator.name == chartCreator && $0.isPlottable }) else {
+            return models
+        }
+        return models.filter { $0.modelCreator.name == chartCreator }
     }
     private var plotted: [AIModel] { visibleModels.filter(\.isPlottable) }
     private var plottedCreators: [String] {
-        Set(plotted.map(\.modelCreator.name)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        Set(modelsBeforeChartCreator.lazy.filter(\.isPlottable).map(\.modelCreator.name))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+    private var filterRules: [String] {
+        var rules: [String] = []
+        if showsChinaOnly { rules.append("只看中国") }
+        if showsFavoritesOnly { rules.append("只看收藏") }
+        if let selectedEffort { rules.append("思考档位 \(selectedEffort.rawValue)") }
+        if let chartCreator { rules.append("图例厂商 \(chartCreator)") }
+        if store.hasCreatorFilter {
+            let creators = store.creators.filter { store.selectedCreators.contains($0) }
+            rules.append(creators.isEmpty ? "未选择厂商" : "厂商 \(creators.joined(separator: "、"))")
+        }
+        if let minimum = store.scoreFilter.minimum { rules.append("智力 ≥ \(number(minimum, digits: 15))") }
+        if let maximum = store.scoreFilter.maximum { rules.append("智力 ≤ \(number(maximum, digits: 15))") }
+        return rules
     }
 
     var body: some View {
@@ -57,9 +84,9 @@ struct ContentView: View {
                     }
                 }
                 if store.updatedAt != nil {
-                    ChartControls(hasModels: !plotted.isEmpty,
-                                  hasMissingPrices: plotted.contains { $0.cost == nil },
-                                  creators: plottedCreators,
+                    ChartControls(hasMissingPrices: plotted.contains { $0.cost == nil },
+                                  creators: plottedCreators, selectedCreator: chartCreator,
+                                  toggleCreator: toggleChartCreator,
                                   scale: $scale, offset: $offset, resetCanvas: resetCanvas)
                         .background(appBackground)
                         .zIndex(1)
@@ -68,7 +95,10 @@ struct ContentView: View {
             .coordinateSpace(name: "overviewViewport")
             .background(appBackground.ignoresSafeArea())
             .toolbar(.hidden)
-            .sheet(isPresented: $showSettings) { SettingsView(store: store) }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(store: store, appearance: $appearance)
+                    .preferredColorScheme(appearance.colorScheme)
+            }
             .sheet(isPresented: $showFilters) { FilterView(store: store) }
             .sheet(isPresented: $showModels, onDismiss: {
                 if let model = pendingDetail { selected = model; pendingDetail = nil }
@@ -105,9 +135,14 @@ struct ContentView: View {
                     highlighted = nil
                 }
             }
-            .onChange(of: store.selectedReasoningEfforts) { _, _ in
+            .onChange(of: selectedEffort) { _, _ in
                 highlighted = nil
                 focusRequest = nil
+            }
+            .onChange(of: plottedCreators) { _, creators in
+                if let chartCreator, !creators.contains(chartCreator) {
+                    self.chartCreator = nil
+                }
             }
             .task {
                 let request = Task { await store.refreshOnLaunch() }
@@ -130,26 +165,29 @@ struct ContentView: View {
                         .padding(.horizontal, 16).padding(.top, 10)
                 }
                 if store.updatedAt != nil {
-                    OverviewHeader(count: visibleModels.count, favoriteCount: favoriteCountInScope,
-                                   updatedAt: store.updatedAt, rateLimit: store.activeRateLimit,
+                    let models = visibleModels
+                    let chartModels = models.filter(\.isPlottable)
+                    OverviewHeader(count: models.count, favoriteCount: favoriteCountInScope,
+                                   rateLimit: store.activeRateLimit,
+                                   filterRules: filterRules, clearFilters: clearFilters,
                                    availableEfforts: availableEfforts,
-                                   selectedEfforts: store.selectedReasoningEfforts,
+                                   selectedEffort: selectedEffort,
                                    toggleEffort: store.toggleReasoningEffort,
                                    showsChinaOnly: $showsChinaOnly, showsFavoritesOnly: $showsFavoritesOnly)
-                    if plotted.isEmpty {
+                    if chartModels.isEmpty {
                         ContentUnavailableView {
                             Label("暂无可绘制的模型", systemImage: "chart.xyaxis.line")
                         } description: {
-                            Text(visibleModels.isEmpty ? "当前筛选条件下没有模型。" : "当前模型缺少绘图所需的指标。")
+                            Text(models.isEmpty ? "当前筛选条件下没有模型。" : "当前模型缺少绘图所需的指标。")
                         } actions: {
                             Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent).tint(tealFill)
-                            if !visibleModels.isEmpty {
+                            if !models.isEmpty {
                                 Button("查看模型列表") { showModels = true }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        ChartCanvas(models: plotted, scaleModels: store.filtered.filter(\.isPlottable),
+                        ChartCanvas(models: chartModels, scaleModels: store.filtered.filter(\.isPlottable),
                                     favoriteModelIDs: store.favoriteModelIDs,
                                     highlighted: $highlighted, focusRequest: $focusRequest,
                                     offset: $offset, scale: $scale, isZooming: $isChartZooming,
@@ -171,6 +209,21 @@ struct ContentView: View {
     }
 
     private func resetCanvas() { scale = 1; offset = .zero; highlighted = nil; focusRequest = nil }
+
+    private func clearFilters() {
+        showsChinaOnly = false
+        showsFavoritesOnly = false
+        chartCreator = nil
+        highlighted = nil
+        focusRequest = nil
+        store.clearFilters()
+    }
+
+    private func toggleChartCreator(_ creator: String) {
+        chartCreator = chartCreator == creator ? nil : creator
+        highlighted = nil
+        focusRequest = nil
+    }
 
     private func refresh() {
         Task { await store.refresh() }

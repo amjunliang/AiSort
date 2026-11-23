@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ChartControls: View {
     @Environment(\.colorScheme) private var colorScheme
-    let hasModels: Bool
     let hasMissingPrices: Bool
     let creators: [String]
+    let selectedCreator: String?
+    let toggleCreator: (String) -> Void
     @Binding var scale: CGFloat
     @Binding var offset: CGSize
     let resetCanvas: () -> Void
@@ -31,14 +32,27 @@ struct ChartControls: View {
                     Image(systemName: "arrow.counterclockwise").frame(width: 36, height: 36)
                 }.buttonStyle(.plain).background(appSurface, in: Circle()).accessibilityLabel("重置图表")
             }
-            if hasModels {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    if creators.isEmpty {
+                        Text(" ").font(.appCaption2).padding(.vertical, 6).hidden()
+                    } else {
                         ForEach(creators, id: \.self) { creator in
-                            HStack(spacing: 5) {
-                                Circle().fill(creatorColor(creator, in: colorScheme)).frame(width: 7, height: 7)
-                                Text(creator).font(.appCaption2).lineLimit(1)
-                            }.padding(.vertical, 6)
+                            let color = creatorColor(creator, in: colorScheme)
+                            let isSelected = creator == selectedCreator
+                            Button { toggleCreator(creator) } label: {
+                                HStack(spacing: 5) {
+                                    Circle().fill(color).frame(width: 7, height: 7)
+                                    Text(creator).font(.appCaption2).lineLimit(1)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? color.opacity(0.16) : .clear, in: Capsule())
+                                .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
+                            .help(isSelected ? "显示所有厂商" : "只看 \(creator)")
                         }
                     }
                 }

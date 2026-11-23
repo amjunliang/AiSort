@@ -40,7 +40,7 @@ struct OverviewToolbar: View {
             Menu {
                 Button { Task { await store.refresh() } } label: { Label("刷新数据", systemImage: "arrow.clockwise") }
                     .disabled(!store.hasKey || store.isLoading)
-                Button { showSettings() } label: { Label("API Key 设置", systemImage: "gearshape") }
+                Button { showSettings() } label: { Label("设置", systemImage: "gearshape") }
             } label: { Image(systemName: "ellipsis.circle").frame(width: 32, height: 44) }
                 .accessibilityLabel("更多选项")
         }

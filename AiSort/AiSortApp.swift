@@ -11,10 +11,12 @@ import SwiftUI
 struct AiSortApp: App {
     // 所有窗口共用一个 controller，避免每开一个窗口就重新请求一轮。
     @StateObject private var store = ModelController()
+    @AppStorage("appearance") private var appearance = AppAppearance.system
 
     var body: some Scene {
         WindowGroup {
-            ContentView(store: store)
+            ContentView(store: store, appearance: $appearance)
+                .preferredColorScheme(appearance.colorScheme)
         }
     }
 }

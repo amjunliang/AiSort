@@ -3,31 +3,51 @@ import SwiftUI
 struct OverviewHeader: View {
     let count: Int
     let favoriteCount: Int
-    let updatedAt: Date?
     let rateLimit: RateLimit?
+    let filterRules: [String]
+    let clearFilters: () -> Void
     let availableEfforts: [ReasoningEffort]
-    let selectedEfforts: Set<ReasoningEffort>
+    let selectedEffort: ReasoningEffort?
     let toggleEffort: (ReasoningEffort) -> Void
     @Binding var showsChinaOnly: Bool
     @Binding var showsFavoritesOnly: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
                 Text("模型全景")
                     .font(.title2.bold())
                     .foregroundStyle(ink)
                     .lineLimit(1)
-                Spacer(minLength: 0)
-                Text("\(count) 个模型")
-                    .font(.appCaption.weight(.semibold))
-                    .foregroundStyle(teal)
-                    .lineLimit(1)
                     .fixedSize()
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(teal.opacity(0.09), in: Capsule())
+                if filterRules.isEmpty {
+                    Spacer(minLength: 0)
+                } else {
+                    let summary = filterRules.joined(separator: " · ")
+                    Text(summary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(summary)
+                        .accessibilityLabel("当前筛选，\(summary)")
+                }
+                HStack(spacing: 4) {
+                    clearFiltersButton
+                        .opacity(filterRules.isEmpty ? 0 : 1)
+                        .disabled(filterRules.isEmpty)
+                        .accessibilityHidden(filterRules.isEmpty)
+                    Text("\(count) 个模型")
+                        .font(.appCaption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(teal)
+                        .fixedSize()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(teal.opacity(0.09), in: Capsule())
+                }
+                .fixedSize()
             }
+            .frame(minHeight: 28)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -74,7 +94,7 @@ struct OverviewHeader: View {
                             .padding(.horizontal, 2)
 
                         ForEach(availableEfforts) { effort in
-                            let isSelected = selectedEfforts.contains(effort)
+                            let isSelected = effort == selectedEffort
                             Button {
                                 toggleEffort(effort)
                             } label: {
@@ -103,24 +123,24 @@ struct OverviewHeader: View {
                     }
                 }
             }
-
-            HStack(spacing: 8) {
-                Text("左上角代表更高智力、更低成本")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 4)
-                if let updatedAt {
-                    Text("更新于 \(updatedAt.formatted(.dateTime.month(.twoDigits).day(.twoDigits).hour().minute()))")
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-            }
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 10)
     }
 
+    private var clearFiltersButton: some View {
+        Button(action: clearFilters) {
+            Text("清除")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(teal)
+                .fixedSize()
+                .padding(.horizontal, 4)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("清除全部筛选")
+        .accessibilityLabel("清除全部筛选")
+    }
 }

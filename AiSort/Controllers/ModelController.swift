@@ -26,7 +26,7 @@ final class ModelController: ObservableObject {
     @Published var hasKey: Bool
     @Published var selectedCreators: Set<String> = []
     @Published private(set) var favoriteModelIDs: Set<String> = []
-    @Published private(set) var selectedReasoningEfforts: Set<ReasoningEffort> = []
+    @Published private(set) var selectedReasoningEffort: ReasoningEffort?
     @Published private(set) var scoreFilter = ScoreFilter()
     @Published private(set) var canvasResetVersion = 0
     @Published private(set) var rateLimit: RateLimit?
@@ -48,6 +48,7 @@ final class ModelController: ObservableObject {
     private let rateLimitKey = "apiRateLimit"
     private let pagesKey = "apiPagesPerRefresh"
     var showsLoadingIndicator: Bool { isLoading && !isSilentRefresh }
+    var hasCreatorFilter: Bool { !allSelected }
     var creators: [String] { Array(Set(models.map { $0.modelCreator.name })).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
     var filtered: [AIModel] {
         models.filter { selectedCreators.contains($0.modelCreator.name) && scoreFilter.includes($0.intelligence) }
@@ -67,7 +68,9 @@ final class ModelController: ObservableObject {
         self.allSelected = defaults.object(forKey: "creatorFilterAll") as? Bool ?? true
         selectedCreators = Set(defaults.stringArray(forKey: filterKey) ?? [])
         favoriteModelIDs = Set(defaults.stringArray(forKey: favoritesKey) ?? [])
-        selectedReasoningEfforts = Set((defaults.stringArray(forKey: reasoningEffortKey) ?? []).compactMap(ReasoningEffort.init(rawValue:)))
+        let savedEfforts = (defaults.stringArray(forKey: reasoningEffortKey) ?? [])
+            .compactMap(ReasoningEffort.init(rawValue:))
+        selectedReasoningEffort = savedEfforts.count == 1 ? savedEfforts.first : nil
         let scoreBounds = defaults.dictionary(forKey: scoreFilterKey)
         scoreFilter = ScoreFilter(minimum: scoreBounds?["minimum"] as? Double, maximum: scoreBounds?["maximum"] as? Double)
         loadCache()
@@ -82,14 +85,19 @@ final class ModelController: ObservableObject {
         defaults.set(allSelected, forKey: "creatorFilterAll")
         if !allSelected { defaults.set(Array(selectedCreators), forKey: filterKey) }
     }
-    func setScoreFilter(_ filter: ScoreFilter) {
+    func setScoreFilter(_ filter: ScoreFilter, resetsCanvas: Bool = true) {
         guard scoreFilter != filter else { return }
         scoreFilter = filter
         let bounds = ["minimum": filter.minimum, "maximum": filter.maximum].compactMapValues { $0 }
         defaults.set(bounds, forKey: scoreFilterKey)
-        canvasResetVersion += 1
+        if resetsCanvas { canvasResetVersion += 1 }
     }
-    func selectAll() { allSelected = true; selectedCreators = Set(creators); saveFilter(); canvasResetVersion += 1 }
+    func selectAll(resetsCanvas: Bool = true) {
+        allSelected = true
+        selectedCreators = Set(creators)
+        saveFilter()
+        if resetsCanvas { canvasResetVersion += 1 }
+    }
     func clearSelection() { allSelected = false; selectedCreators = []; saveFilter(); canvasResetVersion += 1 }
     func toggleCreator(_ creator: String) {
         if selectedCreators.contains(creator) { selectedCreators.remove(creator) } else { selectedCreators.insert(creator) }
@@ -109,12 +117,15 @@ final class ModelController: ObservableObject {
         defaults.set(Array(favoriteModelIDs).sorted(), forKey: favoritesKey)
     }
     func toggleReasoningEffort(_ effort: ReasoningEffort) {
-        if selectedReasoningEfforts.contains(effort) {
-            selectedReasoningEfforts.remove(effort)
-        } else {
-            selectedReasoningEfforts.insert(effort)
+        selectedReasoningEffort = selectedReasoningEffort == effort ? nil : effort
+        defaults.set(selectedReasoningEffort.map { [$0.rawValue] } ?? [], forKey: reasoningEffortKey)
+    }
+    func clearFilters() {
+        selectAll(resetsCanvas: false)
+        setScoreFilter(ScoreFilter(), resetsCanvas: false)
+        if let selectedReasoningEffort {
+            toggleReasoningEffort(selectedReasoningEffort)
         }
-        defaults.set(selectedReasoningEfforts.map(\.rawValue).sorted(), forKey: reasoningEffortKey)
     }
     func saveKey(_ value: String) async {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)

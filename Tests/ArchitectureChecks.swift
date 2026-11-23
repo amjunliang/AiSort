@@ -98,13 +98,31 @@ struct ArchitectureChecks {
         require(ReasoningEffort.parse(from: "Gemini 4 (Medium)") == .medium, "Medium effort not parsed")
         require(ReasoningEffort.parse(from: "Claude Opus (Adaptive, Max)") == .max, "Max effort in multi-token parens not parsed")
         require(ReasoningEffort.parse(from: "Plain Model") == .none, "Plain model should map to .none effort")
+        defaults.set(["High", "Max"], forKey: "reasoningEffortFilter")
+        let migratedEfforts = ModelController(cacheStore: cacheStore, defaults: defaults, readKey: { nil })
+        require(migratedEfforts.selectedReasoningEffort == nil, "Legacy multi-selection should restore all efforts")
         restoredFavorites.toggleReasoningEffort(.high)
         restoredFavorites.toggleReasoningEffort(.max)
         let restoredEfforts = ModelController(cacheStore: cacheStore, defaults: defaults, readKey: { nil })
-        require(restoredEfforts.selectedReasoningEfforts == [.high, .max], "Reasoning effort filter was not persisted")
-        restoredEfforts.toggleReasoningEffort(.high)
+        require(restoredEfforts.selectedReasoningEffort == .max, "New effort should replace the previous selection and persist")
         restoredEfforts.toggleReasoningEffort(.max)
-        require(restoredEfforts.selectedReasoningEfforts.isEmpty, "Clearing reasoning efforts should restore empty set")
+        require(restoredEfforts.selectedReasoningEffort == nil, "Tapping the selected effort should restore all efforts")
+        restoredEfforts.toggleReasoningEffort(.none)
+        require(restoredEfforts.selectedReasoningEffort == .some(.none), "Untiered models should be a distinct effort filter")
+        restoredEfforts.toggleReasoningEffort(.none)
+        require(restoredEfforts.selectedReasoningEffort == nil, "Tapping untiered again should restore all efforts")
+        restoredEfforts.toggleReasoningEffort(.high)
+        restoredEfforts.clearSelection()
+        restoredEfforts.setScoreFilter(.init(minimum: 40))
+        let viewportBeforeClearingFilters = restoredEfforts.canvasResetVersion
+        restoredEfforts.clearFilters()
+        require(restoredEfforts.canvasResetVersion == viewportBeforeClearingFilters,
+                "Clear filters should preserve the chart viewport")
+        let clearedFilters = ModelController(cacheStore: cacheStore, defaults: defaults, readKey: { nil })
+        require(!clearedFilters.hasCreatorFilter && clearedFilters.selectedCreators == Set(clearedFilters.creators),
+                "Clear filters should restore all creators after launch")
+        require(!clearedFilters.scoreFilter.isActive && clearedFilters.selectedReasoningEffort == nil,
+                "Clear filters should remove persisted score and effort rules")
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         let session = URLSession(configuration: config)

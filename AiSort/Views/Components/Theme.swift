@@ -1,5 +1,27 @@
 import SwiftUI
 
+enum AppAppearance: String, CaseIterable {
+    case system
+    case light
+    case dark
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 nonisolated let ink = Color("Ink")
 let teal = Color("Teal")
 let tealFill = Color("TealFill")

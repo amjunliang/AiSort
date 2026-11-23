@@ -2,11 +2,20 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: ModelController
+    @Binding var appearance: AppAppearance
     @Environment(\.dismiss) private var dismiss
     @State private var key = ""
     var body: some View {
         NavigationStack {
             Form {
+                Section("外观") {
+                    Picker("主题", selection: $appearance) {
+                        ForEach(AppAppearance.allCases, id: \.self) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
                 Section("Artificial Analysis API Key") {
                     SecureField(store.hasKey ? "输入新密钥以替换" : "输入 API Key", text: $key)
                         #if os(iOS)
