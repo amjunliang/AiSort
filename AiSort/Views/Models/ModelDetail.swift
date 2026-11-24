@@ -15,9 +15,9 @@ struct ModelDetail: View {
                         Circle().fill(creatorColor(model.modelCreator.name, in: colorScheme)).frame(width: 12, height: 12)
                         Text(model.modelCreator.name).font(.appSubheadline.weight(.medium)).foregroundStyle(.secondary)
                         Text(model.modelCreator.region?.rawValue ?? "未分类")
-                            .font(.appCaption.weight(.semibold)).foregroundStyle(teal)
+                            .font(.appCaption.weight(.semibold)).foregroundStyle(ink)
                             .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(teal.opacity(0.09), in: Capsule())
+                            .background(ink.opacity(0.09), in: Capsule())
                     }
                     Text(model.name).font(.title.bold()).foregroundStyle(ink)
                     detailCard("评测") {
@@ -68,7 +68,7 @@ struct ModelDetail: View {
                         Button(action: toggleFavorite) {
                             Label(isFavorite ? "已收藏" : "收藏", systemImage: isFavorite ? "star.fill" : "star")
                         }
-                        .tint(teal)
+                        .tint(ink)
                         .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
                     }
                     ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }

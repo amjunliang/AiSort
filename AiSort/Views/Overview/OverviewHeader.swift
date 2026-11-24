@@ -2,11 +2,13 @@ import SwiftUI
 
 struct OverviewHeader: View {
     let count: Int
+    let totalCount: Int
     let favoriteCount: Int
+    let totalFavoriteCount: Int
     let rateLimit: RateLimit?
     let filterRules: [String]
     let clearFilters: () -> Void
-    let availableEfforts: [ReasoningEffort]
+    let availableEfforts: Set<ReasoningEffort>
     let selectedEffort: ReasoningEffort?
     let toggleEffort: (ReasoningEffort) -> Void
     @Binding var showsChinaOnly: Bool
@@ -25,8 +27,8 @@ struct OverviewHeader: View {
                 } else {
                     let summary = filterRules.joined(separator: " · ")
                     Text(summary)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(ink.opacity(0.9))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .help(summary)
@@ -37,13 +39,14 @@ struct OverviewHeader: View {
                         .opacity(filterRules.isEmpty ? 0 : 1)
                         .disabled(filterRules.isEmpty)
                         .accessibilityHidden(filterRules.isEmpty)
-                    Text("\(count) 个模型")
+                    Text("\(totalCount) 个模型")
+                        .hidden()
+                        .overlay(alignment: .trailing) { Text("\(count) 个模型") }
                         .font(.appCaption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(teal)
+                        .foregroundStyle(ink.opacity(0.8))
                         .fixedSize()
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 4)
                         .padding(.vertical, 5)
-                        .background(teal.opacity(0.09), in: Capsule())
                 }
                 .fixedSize()
             }
@@ -55,61 +58,52 @@ struct OverviewHeader: View {
                         showsChinaOnly.toggle()
                     } label: {
                         Text("只看中国")
-                            .font(.appCaption.weight(.semibold))
-                            .foregroundStyle(showsChinaOnly ? .white : teal)
+                            .filterChip(selected: showsChinaOnly)
                             .lineLimit(1)
                             .fixedSize()
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(showsChinaOnly ? tealFill : teal.opacity(0.09), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(showsChinaOnly ? .isSelected : [])
 
-                    if favoriteCount > 0 || showsFavoritesOnly {
+                    let canToggleFavorites = favoriteCount > 0 || showsFavoritesOnly
+                    Button {
+                        showsFavoritesOnly.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("收藏 (\(totalFavoriteCount))")
+                                .hidden()
+                                .overlay(alignment: .leading) { Text("收藏 (\(favoriteCount))") }
+                                .monospacedDigit()
+                        }
+                        .filterChip(selected: showsFavoritesOnly)
+                        .lineLimit(1)
+                        .fixedSize()
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canToggleFavorites)
+                    .accessibilityAddTraits(showsFavoritesOnly ? .isSelected : [])
+
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, 2)
+
+                    ForEach(ReasoningEffort.allCases) { effort in
+                        let isSelected = effort == selectedEffort
+                        let isAvailable = availableEfforts.contains(effort)
                         Button {
-                            showsFavoritesOnly.toggle()
+                            toggleEffort(effort)
                         } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 11, weight: .semibold))
-                                Text("收藏 (\(favoriteCount))")
-                            }
-                            .font(.appCaption.weight(.semibold))
-                            .foregroundStyle(showsFavoritesOnly ? .white : teal)
-                            .lineLimit(1)
-                            .fixedSize()
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(showsFavoritesOnly ? tealFill : teal.opacity(0.09), in: Capsule())
+                            Text(effort.rawValue)
+                                .filterChip(selected: isSelected)
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                         .buttonStyle(.plain)
-                        .accessibilityAddTraits(showsFavoritesOnly ? .isSelected : [])
-                    }
-
-                    if !availableEfforts.isEmpty {
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.12))
-                            .frame(width: 1, height: 16)
-                            .padding(.horizontal, 2)
-
-                        ForEach(availableEfforts) { effort in
-                            let isSelected = effort == selectedEffort
-                            Button {
-                                toggleEffort(effort)
-                            } label: {
-                                Text(effort.rawValue)
-                                    .font(.appCaption.weight(.semibold))
-                                    .foregroundStyle(isSelected ? .white : teal)
-                                    .lineLimit(1)
-                                    .fixedSize()
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(isSelected ? tealFill : teal.opacity(0.09), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(isSelected ? .isSelected : [])
-                        }
+                        .disabled(!isAvailable)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
 
                     if let rateLimit, rateLimit.remaining < 10 {
@@ -133,7 +127,7 @@ struct OverviewHeader: View {
         Button(action: clearFilters) {
             Text("清除")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(teal)
+                .foregroundStyle(ink)
                 .fixedSize()
                 .padding(.horizontal, 4)
                 .frame(height: 28)
@@ -143,4 +137,24 @@ struct OverviewHeader: View {
         .help("清除全部筛选")
         .accessibilityLabel("清除全部筛选")
     }
+}
+
+private struct FilterChipStyle: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    let selected: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .font(.appCaption.weight(.semibold))
+            .foregroundStyle(selected ? appBackground : ink.opacity(isEnabled ? 1 : 0.66))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(selected ? ink : ink.opacity(isEnabled ? 0.07 : 0.035), in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? Color.clear : ink.opacity(isEnabled ? 0.2 : 0.12), lineWidth: 1))
+            .contentShape(Capsule())
+    }
+}
+
+private extension View {
+    func filterChip(selected: Bool) -> some View { modifier(FilterChipStyle(selected: selected)) }
 }

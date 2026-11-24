@@ -86,7 +86,7 @@ struct FilterView: View {
                                         Text(creator).foregroundStyle(.primary)
                                         Spacer()
                                         if store.selectedCreators.contains(creator) {
-                                            Image(systemName: "checkmark").foregroundStyle(teal)
+                                            Image(systemName: "checkmark").foregroundStyle(ink)
                                         }
                                     }.contentShape(Rectangle())
                                 }.buttonStyle(.plain)

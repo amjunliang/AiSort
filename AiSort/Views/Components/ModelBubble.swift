@@ -42,7 +42,7 @@ struct ModelBubble: View {
                         Spacer(minLength: 2)
                         Button(action: toggleFavorite) {
                             Image(systemName: isFavorite ? "star.fill" : "star")
-                                .foregroundStyle(teal)
+                                .foregroundStyle(ink)
                                 .frame(width: 24, height: 24)
                         }
                         .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
@@ -68,7 +68,7 @@ struct ModelBubble: View {
                     if !showsName {
                         Button(action: toggleFavorite) {
                             Image(systemName: isFavorite ? "star.fill" : "star")
-                                .foregroundStyle(teal)
+                                .foregroundStyle(ink)
                                 .frame(width: 24, height: 24)
                         }
                         .accessibilityLabel(isFavorite ? "取消收藏\(model.name)" : "收藏\(model.name)")
@@ -99,11 +99,11 @@ struct ModelBubble: View {
                 .fill(appSurface)
                 .overlay {
                     BubbleOutline(pointsUp: pointsUp, tailCenterX: tailCenterX, tailSize: Self.tailSize)
-                        .stroke(teal.opacity(0.2), lineWidth: 1)
+                        .stroke(ink.opacity(0.2), lineWidth: 1)
                 }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(teal)
+        .foregroundStyle(ink)
         .compositingGroup()
         .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
         .accessibilityElement(children: .contain)

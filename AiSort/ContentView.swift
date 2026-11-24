@@ -19,12 +19,15 @@ struct ContentView: View {
     @State private var isChartZooming = false
     @State private var focusRequest: String?
 
+    private static let preferredLegendCreators = [
+        "Google", "OpenAI", "Anthropic", "Alibaba", "DeepSeek", "Kimi", "MiniMax", "Z AI"
+    ]
+
     private var regionFilteredModels: [AIModel] {
         showsChinaOnly ? store.filtered.filter { CreatorRegion.china.includes($0.modelCreator) } : store.filtered
     }
-    private var availableEfforts: [ReasoningEffort] {
-        let present = Set(regionFilteredModels.lazy.filter(\.isPlottable).map(\.reasoningEffort))
-        return ReasoningEffort.allCases.filter { present.contains($0) }
+    private var availableEfforts: Set<ReasoningEffort> {
+        Set(regionFilteredModels.lazy.filter(\.isPlottable).map(\.reasoningEffort))
     }
     private var selectedEffort: ReasoningEffort? {
         guard let effort = store.selectedReasoningEffort, availableEfforts.contains(effort) else { return nil }
@@ -49,8 +52,12 @@ struct ContentView: View {
     }
     private var plotted: [AIModel] { visibleModels.filter(\.isPlottable) }
     private var plottedCreators: [String] {
-        Set(modelsBeforeChartCreator.lazy.filter(\.isPlottable).map(\.modelCreator.name))
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let creators = Set(modelsBeforeChartCreator.lazy.filter(\.isPlottable).map(\.modelCreator.name))
+        let preferred = Self.preferredLegendCreators.filter { creators.contains($0) }
+        let others = creators.subtracting(preferred).sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+        return preferred + others
     }
     private var filterRules: [String] {
         var rules: [String] = []
@@ -148,7 +155,7 @@ struct ContentView: View {
                 let request = Task { await store.refreshOnLaunch() }
                 await request.value
             }
-        }.tint(teal).font(.appBody)
+        }.tint(ink).font(.appBody)
     }
 
     private func scrollContent(minHeight: CGFloat) -> some View {
@@ -167,7 +174,8 @@ struct ContentView: View {
                 if store.updatedAt != nil {
                     let models = visibleModels
                     let chartModels = models.filter(\.isPlottable)
-                    OverviewHeader(count: models.count, favoriteCount: favoriteCountInScope,
+                    OverviewHeader(count: models.count, totalCount: store.models.count,
+                                   favoriteCount: favoriteCountInScope, totalFavoriteCount: store.favoriteModelIDs.count,
                                    rateLimit: store.activeRateLimit,
                                    filterRules: filterRules, clearFilters: clearFilters,
                                    availableEfforts: availableEfforts,
@@ -180,7 +188,7 @@ struct ContentView: View {
                         } description: {
                             Text(models.isEmpty ? "当前筛选条件下没有模型。" : "当前模型缺少绘图所需的指标。")
                         } actions: {
-                            Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent).tint(tealFill)
+                            Button("调整筛选") { showFilters = true }.buttonStyle(.borderedProminent).tint(ink).foregroundStyle(appBackground)
                             if !models.isEmpty {
                                 Button("查看模型列表") { showModels = true }
                             }
@@ -193,7 +201,7 @@ struct ContentView: View {
                                     offset: $offset, scale: $scale, isZooming: $isChartZooming,
                                     toggleFavorite: { store.toggleFavorite($0.id) },
                                     showDetail: { selected = $0 })
-                            .frame(minHeight: max(280, minHeight * 0.5))
+                            .frame(minHeight: max(280, minHeight * 0.5), maxHeight: .infinity)
                     }
                 } else if store.isLoading {
                     ProgressView("正在获取模型数据…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,7 +209,7 @@ struct ContentView: View {
                     WelcomeView(hasKey: store.hasKey, refresh: refresh, showSettings: { showSettings = true }).padding(20).frame(maxWidth: 540).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(minHeight: minHeight)
+            .frame(minHeight: minHeight, alignment: .top)
         }
         .scrollClipDisabled(highlighted != nil)
         .modifier(ChartScrollLock(scale: $scale, isZooming: $isChartZooming))

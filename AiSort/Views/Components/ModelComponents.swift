@@ -23,7 +23,7 @@ struct ModelRow: View {
                 if isFavorite {
                     Image(systemName: "star.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(teal)
+                        .foregroundStyle(ink)
                         .accessibilityLabel("已收藏")
                 }
                 Spacer()

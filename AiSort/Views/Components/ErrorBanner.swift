@@ -48,7 +48,7 @@ struct RefreshNoticeBanner: View {
                     .fixedSize()
             }
             .padding(.leading, 26)
-        }.font(.appCaption).foregroundStyle(teal)
-            .padding(12).background(teal.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+        }.font(.appCaption).foregroundStyle(ink)
+            .padding(12).background(ink.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
     }
 }

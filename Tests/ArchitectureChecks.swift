@@ -41,6 +41,29 @@ struct ArchitectureChecks {
         let free = model("Free", creator: "Meta", score: 42, input: 0, output: 0, speed: 20)
         require(unpriced.isPlottable && unpriced.chartCost == nil, "Scored models without a price or speed should be plottable")
         require(free.isPlottable && free.chartCost == 0, "A free model should keep its zero cost coordinate")
+        let chartMetrics = ChartMetrics(models: [first, second, unpriced], viewportSize: CGSize(width: 390, height: 500))
+        let farRight = CGSize(width: -10_000, height: 0)
+        let overviewBounds = chartMetrics.visibleBounds(offset: farRight, scale: 1).x
+        let zoomedBounds = chartMetrics.visibleBounds(offset: farRight, scale: 5).x
+        let rightmostPrice = chartMetrics.x(for: first)
+        let overviewPadding = overviewBounds.upperBound - rightmostPrice
+        require(overviewBounds == chartMetrics.xBounds, "The full chart extent should remain visible at 100%")
+        require(zoomedBounds.contains(rightmostPrice) && abs((zoomedBounds.upperBound - rightmostPrice) * 5 - overviewPadding) < 1e-9,
+                "At the zoomed right edge, the last bubble should retain its padding without extra empty space")
+        let overviewPriceRange = -0.10...1.15
+        let overviewPriceTicks = BubbleChart.priceTicks(maxX: log10(11), visibleRange: overviewPriceRange, viewportWidth: 390)
+        require(overviewPriceTicks.count == 5 && overviewPriceTicks.first == 0 && overviewPriceTicks.last == log10(11),
+                "A typical price range should show five ticks including zero and ten dollars")
+        let narrowPriceTicks = BubbleChart.priceTicks(maxX: log10(11), visibleRange: overviewPriceRange, viewportWidth: 320)
+        require(narrowPriceTicks.count == 4, "A narrower viewport should use fewer price ticks")
+        let zoomedPriceRange = 0.40...1.10
+        let zoomedPriceTicks = BubbleChart.priceTicks(maxX: 2, visibleRange: zoomedPriceRange, viewportWidth: 390)
+        require(zoomedPriceTicks.count == 5 && zoomedPriceTicks.allSatisfy { zoomedPriceRange.contains($0) },
+                "Zoomed ticks must stay within the visible range and out of the score column")
+        let betweenPrices = 0.40...0.70
+        let inRangeTicks = BubbleChart.priceTicks(maxX: 2, visibleRange: betweenPrices, viewportWidth: 390)
+        require(inRangeTicks.count == 5 && inRangeTicks.allSatisfy { betweenPrices.contains($0) },
+                "A zoomed range between standard prices should show finer price ticks")
         require(BubbleChart.paretoFrontierIDs(for: [unpriced, free, first]) == [free.id, first.id],
                 "Models with unknown cost should not affect the cost frontier")
         let chinese = AIModel.Creator(id: "alibaba", name: "Alibaba")
@@ -262,7 +285,7 @@ struct ArchitectureChecks {
             placement("Sonnet 5.5 · High", x: 425, score: 41.5, r: 7, w: 105),
             placement("GPT-6.1 Sol · Low", x: 425, score: 35.0, r: 6, w: 105)
         ]
-        let offsets = BubbleChart.resolveLabelOffsets(cluster, plotRect: plotRect, scale: 2.63, featured: ["Gemini 4 Carbon · High", "GPT-6.1 Sol · Low"])
+        let offsets = BubbleChart.resolveLabelOffsets(cluster, plotRect: plotRect, featured: ["Gemini 4 Carbon · High", "GPT-6.1 Sol · Low"])
         require(offsets.count == cluster.count, "All 20 cluster labels should fit when distributed holistically")
         let placed = cluster.compactMap { item -> (item: ChartLabelPlacement, frame: CGRect, spanMinX: CGFloat, spanMaxX: CGFloat)? in
             guard let offset = offsets[item.id] else { return nil }
@@ -300,7 +323,7 @@ struct ArchitectureChecks {
         // 右边缘气泡在未放大时应放到左侧，避免被裁切或压回气泡上
         let rightEdgeItem = placement("Gemini 4 Carbon · High", x: 665, score: 60.0, r: 9, w: 145)
         let leftEdgeItem = placement("GPT-6.1 Sol · Low", x: 85, score: 35.0, r: 8, w: 110)
-        let overviewOffsets = BubbleChart.resolveLabelOffsets([rightEdgeItem, leftEdgeItem], plotRect: plotRect, scale: 1.0,
+        let overviewOffsets = BubbleChart.resolveLabelOffsets([rightEdgeItem, leftEdgeItem], plotRect: plotRect,
                                                               featured: [rightEdgeItem.id, leftEdgeItem.id])
         let rightLabelX = rightEdgeItem.anchor.x + (overviewOffsets[rightEdgeItem.id]?.width ?? 0)
         require(rightLabelX + rightEdgeItem.frame.width <= rightEdgeItem.anchor.x - rightEdgeItem.radius - 4,
@@ -311,7 +334,7 @@ struct ArchitectureChecks {
             placement("LeftNeighbor2", x: 580, score: 49.8, r: 8, w: 110),
             placement("LeftNeighbor3", x: 550, score: 50.0, r: 8, w: 110)
         ]
-        let crowdedRightLayouts = BubbleChart.resolveLabelLayouts(crowdedRightEdge, plotRect: plotRect, scale: 1.0,
+        let crowdedRightLayouts = BubbleChart.resolveLabelLayouts(crowdedRightEdge, plotRect: plotRect,
                                                                   featured: ["Costliest"])
         if let costliestLayout = crowdedRightLayouts["Costliest"] {
             let costliestMaxX = 675 + costliestLayout.offset.width + costliestLayout.size.width
@@ -338,7 +361,7 @@ struct ArchitectureChecks {
             placement("Gemini 4 Flash · Med", x: 160, score: 37.8, r: 10, w: 130),
             placement("Gemini 4 Flash · Low", x: 160, score: 34.0, r: 9, w: 128)
         ]
-        let sparseOffsets = BubbleChart.resolveLabelOffsets(sparseFiltered, plotRect: plotRect, scale: 1.0,
+        let sparseOffsets = BubbleChart.resolveLabelOffsets(sparseFiltered, plotRect: plotRect,
                                                             featured: ["Gemini 4 Carbon · High", "Gemini 4 Carbon · Med"])
         require(sparseOffsets.count == sparseFiltered.count,
                 "Sparse filtered view at scale 1.0 should show all \(sparseFiltered.count) labels, got \(sparseOffsets.count)")
@@ -346,6 +369,28 @@ struct ArchitectureChecks {
             require((sparseOffsets[flashID]?.width ?? -1) > 0,
                     "Sparse pair \(flashID) has room on the right and should prefer right side")
         }
+
+        let wideOverview = CGRect(x: 0, y: 0, width: 1100, height: 200)
+        let overviewGrid = (0..<45).map { index in
+            let anchor = CGPoint(x: 65 + (index % 9) * 120, y: 20 + (index / 9) * 40)
+            let id = "M\(index)"
+            return ChartLabelPlacement(id: id, name: id, radius: 5, anchor: anchor,
+                                       frame: CGRect(x: anchor.x + 9, y: anchor.y - labelHeight / 2,
+                                                     width: 32, height: labelHeight))
+        }
+        let gridLabels = BubbleChart.resolveLabelLayouts(overviewGrid, plotRect: wideOverview, featured: [])
+        require(gridLabels.count == overviewGrid.count, "Overview should show every label that fits, even above 40 bubbles")
+
+        let bottomAnchor = CGPoint(x: plotRect.midX, y: plotRect.maxY - 1)
+        let bottomBubble = ChartLabelPlacement(id: "Bottom", name: "Bottom", radius: 5, anchor: bottomAnchor,
+                                               frame: CGRect(x: bottomAnchor.x + 9, y: bottomAnchor.y - labelHeight / 2,
+                                                             width: 48, height: labelHeight))
+        let bottomLayouts = BubbleChart.resolveLabelLayouts([bottomBubble], plotRect: plotRect, featured: [])
+        guard let bottomLabel = bottomLayouts[bottomBubble.id] else {
+            fatalError("A model near the price axis should still have space for its label")
+        }
+        require(bottomAnchor.y + bottomLabel.offset.height + bottomLabel.size.height <= plotRect.maxY - 4,
+                "The model label must stay above the price axis")
 
         // 狭窄走廊场景下启用动态字号（12 -> 8.5），尽可能完整显示原本会因轻度越界或碰撞被丢弃的标签
         let narrowPlotRect = CGRect(x: 165, y: 20, width: 355, height: 540)
@@ -365,7 +410,7 @@ struct ArchitectureChecks {
             narrowPlacement("GPT-6.1 Sol · Max", x: 410, score: 54.6, r: 8, w: 108),
             narrowPlacement("Gemini 4 Hydrogen · High", x: 280, score: 50.8, r: 12, w: 148)
         ]
-        let narrowLayouts = BubbleChart.resolveLabelLayouts(narrowCorridor, plotRect: narrowPlotRect, scale: 1.0,
+        let narrowLayouts = BubbleChart.resolveLabelLayouts(narrowCorridor, plotRect: narrowPlotRect,
                                                               featured: ["Gemini 4 Carbon · High"])
         require(narrowLayouts["Gemini 4 Carbon · Med"] != nil,
                 "Dynamic font sizing should keep Gemini 4 Carbon · Med visible in narrow corridor")
@@ -410,7 +455,7 @@ struct ArchitectureChecks {
             narrowPlacement("SecondaryFrontierTestLabel", x: 260, score: 49.9, r: 8, w: 165),
             narrowPlacement("CageBottom", x: 360, score: 48.7, r: 8, w: 60)
         ]
-        let tierLayouts = BubbleChart.resolveLabelLayouts(cagedCorridor, plotRect: narrowPlotRect, scale: 1.0,
+        let tierLayouts = BubbleChart.resolveLabelLayouts(cagedCorridor, plotRect: narrowPlotRect,
                                                             featured: [], primary: ["PrimaryFrontierTestLabel"])
         require(tierLayouts["PrimaryFrontierTestLabel"]?.fontSize == 12,
                 "Primary frontier label should stay at 12pt when secondary label conflicts, got \(String(describing: tierLayouts["PrimaryFrontierTestLabel"]))")

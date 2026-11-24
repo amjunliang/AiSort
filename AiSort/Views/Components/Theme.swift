@@ -23,12 +23,12 @@ enum AppAppearance: String, CaseIterable {
 }
 
 nonisolated let ink = Color("Ink")
-let teal = Color("Teal")
+/// Brand color, reserved for the app logo.
 let tealFill = Color("TealFill")
 let appBackground = Color("AppBackground")
 let appSurface = Color("AppSurface")
 let warningText = Color("WarningText")
-private let palette: [Color] = [.init(red: 0.13, green: 0.49, blue: 0.46), .init(red: 0.88, green: 0.48, blue: 0.30), .init(red: 0.37, green: 0.47, blue: 0.71), .init(red: 0.73, green: 0.58, blue: 0.27), .init(red: 0.61, green: 0.40, blue: 0.57), .init(red: 0.35, green: 0.61, blue: 0.66), .init(red: 0.66, green: 0.48, blue: 0.39), .init(red: 0.54, green: 0.60, blue: 0.36)]
+private let palette: [UInt32] = [0x217D75, 0xE07A4D, 0x5E78B5, 0xBA9445, 0x9C6691, 0x599CA8, 0xA87A63, 0x8A995C]
 
 extension Font {
     static var appBody: Font { .system(size: 14) }
@@ -37,15 +37,65 @@ extension Font {
     static var appCaption2: Font { .system(size: 14) }
 }
 
-private func hexColor(_ hex: UInt32) -> Color {
-    Color(
-        red: Double((hex >> 16) & 0xFF) / 255,
-        green: Double((hex >> 8) & 0xFF) / 255,
-        blue: Double(hex & 0xFF) / 255
-    )
+private struct RGB {
+    var r: Double, g: Double, b: Double
+
+    init(hex: UInt32) {
+        r = Double((hex >> 16) & 0xFF) / 255
+        g = Double((hex >> 8) & 0xFF) / 255
+        b = Double(hex & 0xFF) / 255
+    }
+
+    init(r: Double, g: Double, b: Double) { self.r = r; self.g = g; self.b = b }
+
+    var color: Color { Color(red: r, green: g, blue: b) }
+
+    /// WCAG relative luminance.
+    var luminance: Double {
+        func lin(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    func mixed(with other: RGB, by t: Double) -> RGB {
+        RGB(r: r + (other.r - r) * t, g: g + (other.g - g) * t, b: b + (other.b - b) * t)
+    }
+
+    /// Smallest mix toward `target` that brings luminance into the requested range.
+    func adjusted(toward target: RGB, until satisfied: (Double) -> Bool, limit: Double) -> RGB {
+        var t = 0.0
+        var result = self
+        while !satisfied(result.luminance), t < limit {
+            t += 0.02
+            result = mixed(with: target, by: t)
+        }
+        return result
+    }
 }
 
-private func baseCreatorColor(_ name: String) -> Color {
+/// Hand-tuned tones for the most common vendors so they stay recognizable,
+/// clearly distinct from each other and readable on both backgrounds.
+private let tunedCreatorColors: [String: (light: UInt32, dark: UInt32)] = [
+    "anthropic": (0xC15F3C, 0xE8946F),
+    "google": (0x1E8E3E, 0x5BC97D),
+    "openai": (0x3A4250, 0xB8C2D1),
+    "deepseek": (0x2E54E8, 0x7D97FF),
+    "meta": (0x0A7FE0, 0x5AB0FF),
+    "xai": (0x6A5FD0, 0xA59BFF),
+    "spacexai": (0x6A5FD0, 0xA59BFF),
+    "alibaba": (0xE0640F, 0xFF9A52),
+    "mistral": (0xE0420F, 0xFF7A52),
+    "minimax": (0xD62E5E, 0xFF7097),
+    "moonshot ai": (0x1673E6, 0x63A6FF),
+    "kimi": (0x1673E6, 0x63A6FF),
+    "z ai": (0x1C74E0, 0x6AA8FF),
+    "nvidia": (0x5E9400, 0x9AD13A),
+    "xiaomi": (0xEB6100, 0xFF9447)
+]
+
+private let rgbWhite = RGB(r: 1, g: 1, b: 1)
+private let rgbBlack = RGB(r: 0, g: 0, b: 0)
+
+private func baseCreatorHex(_ name: String) -> UInt32? {
     // Colors observed on Artificial Analysis charts; the API does not provide colors.
     let known: [String: UInt32] = [
         "alibaba": 0xFF7018,
@@ -78,14 +128,27 @@ private func baseCreatorColor(_ name: String) -> Color {
         "xiaomi": 0xFF6900,
         "z ai": 0x1C7FF8
     ]
-    if let hex = known[name.lowercased()] { return hexColor(hex) }
-    let hash = name.utf8.reduce(0) { ($0 * 31 + Int($1)) % 10007 }
-    return palette[hash % palette.count]
+    return known[name.lowercased()]
 }
+
 func creatorColor(_ name: String, in colorScheme: ColorScheme) -> Color {
-    let color = baseCreatorColor(name)
-    // Keep dark brand colors visible against the chart and sheet backgrounds.
-    return colorScheme == .dark ? color.mix(with: .white, by: 0.48) : color
+    let key = name.lowercased()
+    if let tuned = tunedCreatorColors[key] {
+        return RGB(hex: colorScheme == .dark ? tuned.dark : tuned.light).color
+    }
+    let base: RGB
+    if let hex = baseCreatorHex(name) {
+        base = RGB(hex: hex)
+    } else {
+        let hash = name.utf8.reduce(0) { ($0 * 31 + Int($1)) % 10007 }
+        base = RGB(hex: palette[hash % palette.count])
+    }
+    // Lift only as much as needed, so saturated brand colors don't wash out on dark,
+    // and neon colors (cyan, lime) are deepened enough to read on light backgrounds.
+    if colorScheme == .dark {
+        return base.adjusted(toward: rgbWhite, until: { $0 >= 0.30 }, limit: 0.7).color
+    }
+    return base.adjusted(toward: rgbBlack, until: { $0 <= 0.28 }, limit: 0.5).color
 }
 
 func number(_ value: Double?, digits: Int = 2) -> String {

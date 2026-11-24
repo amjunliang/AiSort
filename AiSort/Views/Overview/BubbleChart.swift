@@ -10,14 +10,12 @@ import UIKit
 struct BubbleChart: View {
     @Environment(\.colorScheme) private var colorScheme
     let models: [AIModel]
-    let scaleModels: [AIModel]
+    let metrics: ChartMetrics
     let favoriteModelIDs: Set<String>
     @Binding var highlighted: AIModel?
     @Binding var focusRequest: String?
     @Binding var offset: CGSize
     let scale: CGFloat
-    let viewportSize: CGSize
-    let extraHorizontalPan: CGFloat
     let isInteracting: Bool
     let toggleFavorite: (AIModel) -> Void
     let showDetail: (AIModel) -> Void
@@ -73,18 +71,48 @@ struct BubbleChart: View {
         highlighted ?? models.first { $0.id == hoveredModelID }
     }
 
-    private func ticks(maxX: Double, xSpan: Double) -> [Double] {
-        let values = [0.0, 0.1, 1, 10, 100, 1000, 10000].map { log10(1 + $0) }.filter { $0 <= maxX }
-        let spacing = log10(1.1) / xSpan * Double(max(viewportSize.width - 100, 0))
-        return spacing < 55 && values.count > 1 ? Array(values.dropFirst()) : values
+    static func priceTicks(maxX: Double, visibleRange: ClosedRange<Double>, viewportWidth: CGFloat) -> [Double] {
+        let lower = max(0, visibleRange.lowerBound)
+        let upper = min(maxX, visibleRange.upperBound)
+        guard lower <= upper else { return [] }
+        let span = upper - lower
+        guard span > 0 else { return [lower] }
+
+        let plotWidth = Double(max(viewportWidth - 100, 0))
+        let priceWidth = plotWidth * span / (visibleRange.upperBound - visibleRange.lowerBound)
+        let tickCount = 1 + Int(min(4, priceWidth / 54))
+        guard tickCount > 1 else {
+            return [roundedPriceTick(near: lower + span / 2, in: lower...upper)]
+        }
+
+        let spacing = span / Double(tickCount - 1)
+        return (0..<tickCount).map { index in
+            let target = min(upper, lower + Double(index) * spacing)
+            let tolerance = spacing * 0.18
+            return roundedPriceTick(near: target, in: max(lower, target - tolerance)...min(upper, target + tolerance))
+        }
+    }
+
+    private static func roundedPriceTick(near target: Double, in range: ClosedRange<Double>) -> Double {
+        let price = pow(10, target) - 1
+        let priceSpan = pow(10, range.upperBound) - pow(10, range.lowerBound)
+        let unit = pow(10, floor(log10(max(priceSpan, 0.0001))))
+        // Use the largest round dollar increment that fits this slot on the log axis.
+        for step in [unit * 10, unit * 5, unit * 2, unit, unit / 2, unit / 5] where step >= 0.0001 {
+            let units = (price / step).rounded()
+            let nearest = log10(1 + units * step)
+            if range.contains(nearest) { return nearest }
+            let inward = nearest < range.lowerBound ? units + 1 : units - 1
+            let tick = log10(1 + inward * step)
+            if range.contains(tick) { return tick }
+        }
+        return target
     }
 
     var body: some View {
-        let metrics = ChartMetrics(models: scaleModels, viewportSize: viewportSize)
-        let visibleXBounds = visibleBounds(metrics.xBounds, offset: offset.width, axisLength: viewportSize.width,
-                                           inverted: true, trailingMargin: extraHorizontalPan)
-        let visibleYBounds = visibleBounds(metrics.yBounds, offset: offset.height, axisLength: viewportSize.height,
-                                           inverted: false)
+        let viewportSize = metrics.viewportSize
+        let (visibleXBounds, visibleYBounds) = metrics.visibleBounds(offset: offset, scale: scale)
+        let xMidpoint = (visibleXBounds.lowerBound + visibleXBounds.upperBound) / 2
         let lower = ceil(visibleYBounds.lowerBound), upper = floor(visibleYBounds.upperBound)
         let intelligenceTicks = lower <= upper ? Array(stride(from: lower, through: upper, by: 1)) : []
         let ySpan = visibleYBounds.upperBound - visibleYBounds.lowerBound
@@ -101,7 +129,14 @@ struct BubbleChart: View {
         }
         let highestScore = highestModel?.intelligence
         let highestScoreTicks = highestScore.map { visibleYBounds.contains($0) ? [$0] : [] } ?? []
-        let highestColor = highestModel.map { creatorColor($0.modelCreator.name, in: colorScheme) } ?? teal
+        let highestColor = highestModel.map { creatorColor($0.modelCreator.name, in: colorScheme) } ?? ink
+        let visibleReferenceScore = referenceModel.flatMap { model -> Double? in
+            guard let score = model.intelligence, visibleYBounds.contains(score),
+                  visibleXBounds.contains(metrics.x(for: model)) else { return nil }
+            return score
+        }
+        let drawsHighestGuide = highestModel.map { visibleXBounds.contains(metrics.x(for: $0)) } ?? false
+        let guideScores = (drawsHighestGuide ? highestScoreTicks : []) + [visibleReferenceScore].compactMap { $0 }
 
         let orderedModels = models.sorted {
             let favA = favoriteModelIDs.contains($0.id)
@@ -165,11 +200,22 @@ struct BubbleChart: View {
             plot.clipped()
         }
         .chartXAxis {
-            AxisMarks(values: ticks(maxX: metrics.maxX, xSpan: visibleXBounds.upperBound - visibleXBounds.lowerBound)) { value in
-                AxisGridLine().foregroundStyle(.primary.opacity(0.07)); AxisTick()
-                AxisValueLabel {
-                    if let v = value.as(Double.self) {
-                        Text(dollars(pow(10, v) - 1)).font(.appCaption2)
+            AxisMarks(values: Self.priceTicks(maxX: metrics.maxX, visibleRange: visibleXBounds,
+                                             viewportWidth: viewportSize.width)) { value in
+                AxisGridLine().foregroundStyle(.primary.opacity(0.07))
+                AxisTick()
+                if let tick = value.as(Double.self) {
+                    let anchor: UnitPoint = if value.index == 0 && tick <= xMidpoint {
+                        .topLeading
+                    } else if value.index == value.count - 1 && tick >= xMidpoint {
+                        .topTrailing
+                    } else {
+                        .top
+                    }
+                    AxisValueLabel(anchor: anchor) {
+                        Text(dollars(pow(10, tick) - 1))
+                            .font(.appCaption2)
+                            .fixedSize()
                     }
                 }
             }
@@ -178,40 +224,41 @@ struct BubbleChart: View {
             AxisMarks(position: .leading, values: intelligenceTicks) { value in
                 let score = value.as(Double.self) ?? 0
                 let isMajor = Int(score).isMultiple(of: 5)
-                AxisGridLine()
-                    .foregroundStyle(ink.opacity(isMajor ? 0.14 : 0.045))
+                let sharesGuideRow = guideScores.contains { abs(score - $0) * pointsPerIntelligence < 1 }
+                if !sharesGuideRow {
+                    AxisGridLine()
+                        .foregroundStyle(ink.opacity(isMajor ? 0.14 : 0.045))
+                }
                 let overlapsHighestScore = highestScoreTicks.contains {
                     abs(score - $0) * pointsPerIntelligence < 24
                 }
                 if (isMajor || showsEveryIntelligenceValue) && !overlapsHighestScore {
-                    AxisTick().foregroundStyle(ink.opacity(isMajor ? 0.3 : 0.12))
-                    AxisValueLabel {
+                    AxisValueLabel(horizontalSpacing: 6) {
                         Text(score, format: .number.precision(.fractionLength(0)))
                             .font(.appCaption.monospacedDigit())
-                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .leading)
+                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .trailing)
                     }
                 }
             }
             AxisMarks(position: .leading, values: highestScoreTicks) { value in
-                AxisTick(length: 6).foregroundStyle(highestColor)
-                AxisValueLabel(collisionResolution: .disabled) {
+                AxisValueLabel(collisionResolution: .disabled, horizontalSpacing: 6) {
                     if let score = value.as(Double.self) {
                         Text(number(score))
                             .font(.appCaption.weight(.semibold).monospacedDigit())
                             .foregroundStyle(highestColor)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .leading)
+                            .frame(width: Self.intelligenceAxisLabelWidth, alignment: .trailing)
                             .accessibilityLabel("最高智力指数 \(number(score))")
                     }
                 }
             }
         }
         .chartXAxisLabel(position: .bottom, alignment: .center) {
-            Text("混合单价（输入∶输出 = 3∶1）· 美元 / 百万 token")
+            Text(viewportSize.width >= 380 ? "混合单价（输入∶输出 = 3∶1）· 美元 / 百万 token"
+                 : viewportSize.width >= 250 ? "混合单价 · 美元 / 百万 token" : "美元 / 百万 token")
                 .font(.appCaption)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
                 .help("混合单价按输入与输出 token 数量 3:1 计算；横轴采用对数压缩。")
         }
         .chartYAxisLabel(position: .top, alignment: .leading) {
@@ -246,19 +293,16 @@ struct BubbleChart: View {
                             if active { hoveredModelID = nil }
                         }
                         .onChange(of: focusRequest) { _, request in
-                            guard let request, let model = models.first(where: { $0.id == request }), let score = model.intelligence,
-                                  let frame = proxy.plotFrame else { return }
-                            let plotFrame = geo[frame]
-                            let visibleXSpan = (metrics.xBounds.upperBound - metrics.xBounds.lowerBound) / scale
-                            let visibleYSpan = (metrics.yBounds.upperBound - metrics.yBounds.lowerBound) / scale
+                            guard let request, let model = models.first(where: { $0.id == request }),
+                                  let score = model.intelligence else { return }
+                            let visibleXSpan = visibleXBounds.upperBound - visibleXBounds.lowerBound
+                            let visibleYSpan = visibleYBounds.upperBound - visibleYBounds.lowerBound
                             let xCenter = (metrics.xBounds.upperBound + metrics.xBounds.lowerBound) / 2
                             let yCenter = (metrics.yBounds.upperBound + metrics.yBounds.lowerBound) / 2
-                            let proposedX = CGFloat(xCenter - metrics.x(for: model)) * plotFrame.width / CGFloat(visibleXSpan)
-                            let proposedY = CGFloat(score - yCenter) * plotFrame.height / CGFloat(visibleYSpan)
+                            let proposedX = CGFloat(xCenter - metrics.x(for: model)) * viewportSize.width / CGFloat(visibleXSpan)
+                            let proposedY = CGFloat(score - yCenter) * viewportSize.height / CGFloat(visibleYSpan)
                             let proposed = CGSize(width: proposedX, height: proposedY)
-                            let maxX = (geo.size.width + 40) * (scale - 1) / 2
-                            let maxY = (geo.size.height + 40) * (scale - 1) / 2
-                            offset = CGSize(width: min(maxX, max(-maxX, proposed.width)), height: min(maxY, max(-maxY, proposed.height)))
+                            offset = metrics.boundedOffset(proposed, scale: scale)
                             focusRequest = nil
                         }
                         .gesture(SpatialTapGesture().onEnded { gesture in
@@ -278,13 +322,14 @@ struct BubbleChart: View {
 
                     if let frame = proxy.plotFrame {
                         let plot = geo[frame]
+                        let guideHighlighted = highestModel.map { $0.id == referenceModel?.id } ?? false
                         let guideEnd = highestModel.flatMap { model -> CGPoint? in
-                            let cost = metrics.x(for: model)
-                            guard visibleXBounds.contains(cost), let score = highestScoreTicks.first,
-                                  let x = proxy.position(forX: cost), let y = proxy.position(forY: score) else { return nil }
+                            guard drawsHighestGuide, let score = highestScoreTicks.first,
+                                  guideHighlighted || visibleReferenceScore != score,
+                                  let x = proxy.position(forX: metrics.x(for: model)),
+                                  let y = proxy.position(forY: score) else { return nil }
                             return CGPoint(x: plot.minX + x - metrics.bubbleRadius(for: model), y: plot.minY + y)
                         }
-                        let guideHighlighted = highestModel.map { $0.id == referenceModel?.id } ?? false
                         if isInteracting {
                             if let guideEnd {
                                 highestScoreGuide(from: plot.minX, to: guideEnd, avoiding: [],
@@ -314,7 +359,8 @@ struct BubbleChart: View {
                         let plot = geo[plotFrame]
                         let anchor = CGPoint(x: plot.minX + x, y: plot.minY + y)
                         if plot.contains(anchor) {
-                            selectionBubble(for: model, radius: metrics.bubbleRadius(for: model), anchor: anchor, size: geo.size,
+                            selectionBubble(for: model, radius: metrics.bubbleRadius(for: model), anchor: anchor,
+                                            size: CGSize(width: geo.size.width, height: plot.maxY),
                                             spaceAbove: max(0, geo.frame(in: .named("overviewViewport")).minY - 8))
                         }
                     }
@@ -348,15 +394,15 @@ struct BubbleChart: View {
                 path.move(to: CGPoint(x: plotRect.minX, y: anchor.y))
                 path.addLine(to: anchor)
             }
-            .stroke(teal.opacity(0.65), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            .stroke(ink.opacity(0.65), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             Text(number(score))
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
+                .foregroundStyle(appBackground)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(tealFill, in: RoundedRectangle(cornerRadius: 4))
+                .background(ink, in: RoundedRectangle(cornerRadius: 4))
                 .fixedSize()
-                .position(x: plotRect.minX + 24, y: anchor.y)
+                .position(x: plotRect.minX + 24, y: min(anchor.y, plotRect.maxY - 14))
         }
         .allowsHitTesting(false)
         .accessibilityLabel("智力指数 \(number(score))")
@@ -375,7 +421,8 @@ struct BubbleChart: View {
             }
         )
         let canReuseLabels = resolvedLabels.map { $0.key == layoutKey || $0.key.hasSameViewport(as: layoutKey) } ?? false
-        let labels = canReuseLabels ? resolvedLabels?.placements ?? [] : []
+        let visibleIDs = Set(models.map(\.id))
+        let labels = canReuseLabels ? resolvedLabels?.placements.filter { visibleIDs.contains($0.id) } ?? [] : []
         let orderedLabels = labels.filter { !$0.isFavorite } + labels.filter { $0.isFavorite }
         let primary = primaryModelIDs(frontier: resolvedLabels?.frontier ?? [])
         let featured = resolvedLabels?.featured ?? []
@@ -388,15 +435,14 @@ struct BubbleChart: View {
                 let emphasized = primary.contains(label.id) || featured.contains(label.id)
                 let color = creatorColor(label.creator, in: colorScheme)
                 leaderLine(for: label)
-                    .stroke(emphasized ? color.opacity(0.62) : color.mix(with: ink, by: 0.25).opacity(0.24),
+                    .stroke(color.opacity(emphasized ? 0.6 : 0.3),
                             lineWidth: emphasized ? 1.0 : 0.75)
             }
             ForEach(orderedLabels) { label in
                 let emphasized = primary.contains(label.id) || featured.contains(label.id)
                 let creatorTint = creatorColor(label.creator, in: colorScheme)
-                let opacity = label.fontSize < Self.labelFontSize ? 0.68 : 0.74
-                let color = emphasized ? creatorTint.opacity(0.98)
-                    : creatorTint.mix(with: ink, by: 0.35).opacity(colorScheme == .dark ? 0.9 : opacity)
+                let color = emphasized ? creatorTint
+                    : creatorTint.opacity(colorScheme == .dark ? 0.78 : 0.72)
                 Text(label.name)
                     .font(.system(size: label.fontSize, weight: emphasized ? .semibold : .regular))
                     .tracking(Self.labelTracking)
@@ -410,7 +456,7 @@ struct BubbleChart: View {
         }
         .mask(alignment: .topLeading) {
             Rectangle()
-                .frame(width: plotRect.width + 40, height: plotRect.height + 60)
+                .frame(width: plotRect.width + 40, height: plotRect.height + 30)
                 .offset(x: plotRect.minX - 20, y: plotRect.minY - 30)
         }
         .allowsHitTesting(false)
@@ -425,7 +471,7 @@ struct BubbleChart: View {
             let featured = featuredModelIDs
             let frontier = visibleFrontierIDs(metrics: metrics, xRange: xRange, yRange: yRange)
             let primary = primaryModelIDs(frontier: frontier)
-            let input = Self.measureLabels(candidates, plotRect: plotRect, scale: scale, featured: featured)
+            let input = Self.measureLabels(candidates, plotRect: plotRect)
             let layouts = await Self.solveLabelsInBackground(input, featured: featured, primary: primary)
             guard !Task.isCancelled else { return }
             let placements = candidates.compactMap { candidate -> ChartLabelPlacement? in
@@ -508,30 +554,26 @@ struct BubbleChart: View {
     }
 
     static func resolveLabelOffsets(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
-                                    scale: CGFloat, featured: Set<String>) -> [String: CGSize] {
-        resolveLabelLayouts(candidates, plotRect: plotRect, scale: scale, featured: featured).mapValues(\.offset)
+                                    featured: Set<String>) -> [String: CGSize] {
+        resolveLabelLayouts(candidates, plotRect: plotRect, featured: featured).mapValues(\.offset)
     }
 
     /// Place visible labels to the left or right of their bubbles with dynamic font sizing
     /// and distribute them holistically inside the plot viewport so leader lines never cross.
     static func resolveLabelLayouts(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
-                                    scale: CGFloat, featured: Set<String>,
+                                    featured: Set<String>,
                                     primary: Set<String> = []) -> [String: ChartLabelLayout] {
-        let input = measureLabels(candidates, plotRect: plotRect, scale: scale, featured: featured)
+        let input = measureLabels(candidates, plotRect: plotRect)
         return solveLabels(input, featured: featured, primary: primary)
     }
 
-    private static func measureLabels(_ candidates: [ChartLabelPlacement], plotRect: CGRect,
-                                      scale: CGFloat, featured: Set<String>) -> LabelLayoutInput {
+    private static func measureLabels(_ candidates: [ChartLabelPlacement], plotRect: CGRect) -> LabelLayoutInput {
+        // Leave the horizontal axis clear for the price ticks and their labels.
         let area = CGRect(x: plotRect.minX - 16, y: plotRect.minY - 24,
-                          width: plotRect.width + 20, height: plotRect.height + 48)
+                          width: plotRect.width + 20, height: plotRect.height + 20)
         let hitArea = plotRect.insetBy(dx: -4, dy: -4)
         let visibleBubbles = candidates.filter { hitArea.contains($0.anchor) }
-        let baseStep = (visibleBubbles.first?.frame.height ?? 0) + 2
-        let showsAllVisible = scale >= 1.5 || visibleBubbles.count <= max(40, Int(area.height / baseStep) * 2)
-        let active = visibleBubbles.filter {
-            showsAllVisible || featured.contains($0.id)
-        }.sorted {
+        let active = visibleBubbles.sorted {
             if $0.anchor.y != $1.anchor.y { return $0.anchor.y < $1.anchor.y }
             if $0.anchor.x != $1.anchor.x { return $0.anchor.x < $1.anchor.x }
             return $0.id < $1.id
@@ -909,18 +951,6 @@ struct BubbleChart: View {
         #endif
     }
 
-    private func visibleBounds(_ base: ClosedRange<Double>, offset: CGFloat,
-                               axisLength: CGFloat, inverted: Bool, trailingMargin: CGFloat = 0) -> ClosedRange<Double> {
-        guard axisLength > 0 else { return base }
-        let baseSpan = base.upperBound - base.lowerBound
-        let span = baseSpan / scale
-        let direction = inverted ? -1.0 : 1.0
-        let baseCenter = (base.upperBound + base.lowerBound) / 2
-        let center = baseCenter + direction * Double(offset / axisLength) * span
-        let extraSpan = Double(trailingMargin / axisLength) * span
-        let lowerBound = min(base.upperBound - span + extraSpan, max(base.lowerBound, center - span / 2))
-        return lowerBound...(lowerBound + span)
-    }
 }
 
 nonisolated struct ChartLabelLayout: Equatable, Sendable {
@@ -940,14 +970,17 @@ nonisolated struct ChartLabelPlacement: Identifiable, Sendable {
     var frame: CGRect
 }
 
-private struct ChartMetrics {
+struct ChartMetrics {
+    let viewportSize: CGSize
     let maxX: Double
     let maxSpeed: Double
     let missingPriceX: Double
     let xBounds: ClosedRange<Double>
     let yBounds: ClosedRange<Double>
+    private let rightmostX: Double
 
     init(models: [AIModel], viewportSize: CGSize) {
+        self.viewportSize = viewportSize
         var highestCost = 0.0, fastestSpeed = 1.0
         var lowestScore = Double.infinity, highestScore = -Double.infinity
         var hasMissingPrice = false
@@ -971,6 +1004,7 @@ private struct ChartMetrics {
         missingPriceX = -1.5 * inset
         let leftmostX = hasMissingPrice ? missingPriceX : 0
         xBounds = (leftmostX - inset)...(maxX + inset)
+        rightmostX = highestCost
 
         let low = lowestScore.isFinite ? lowestScore : 0
         let high = highestScore.isFinite ? highestScore : 1
@@ -980,6 +1014,31 @@ private struct ChartMetrics {
     }
 
     func x(for model: AIModel) -> Double { model.chartCost ?? missingPriceX }
+
+    func boundedOffset(_ offset: CGSize, scale: CGFloat) -> CGSize {
+        let horizontalLimit = viewportSize.width * (scale - 1) / 2
+        let verticalLimit = viewportSize.height * (scale - 1) / 2
+        // Keep the space beside the rightmost bubble constant in screen points as the data scale changes.
+        let rightPaddingFraction = (xBounds.upperBound - rightmostX) / (xBounds.upperBound - xBounds.lowerBound)
+        let rightPanLimit = horizontalLimit * CGFloat(2 * rightPaddingFraction - 1)
+        return CGSize(width: min(horizontalLimit, max(rightPanLimit, offset.width)),
+                      height: min(verticalLimit, max(-verticalLimit, offset.height)))
+    }
+
+    func visibleBounds(offset: CGSize, scale: CGFloat) -> (x: ClosedRange<Double>, y: ClosedRange<Double>) {
+        let bounded = boundedOffset(offset, scale: scale)
+        return (Self.visibleBounds(xBounds, movement: -bounded.width, axisLength: viewportSize.width, scale: scale),
+                Self.visibleBounds(yBounds, movement: bounded.height, axisLength: viewportSize.height, scale: scale))
+    }
+
+    private static func visibleBounds(_ base: ClosedRange<Double>, movement: CGFloat,
+                                      axisLength: CGFloat, scale: CGFloat) -> ClosedRange<Double> {
+        guard axisLength > 0, scale > 1 else { return base }
+        let span = (base.upperBound - base.lowerBound) / scale
+        let center = (base.upperBound + base.lowerBound) / 2 + Double(movement / axisLength) * span
+        let lower = min(base.upperBound - span, max(base.lowerBound, center - span / 2))
+        return lower...(lower + span)
+    }
 
     func bubbleSize(for model: AIModel) -> Double {
         guard let speed = model.chartSpeed else { return 144 }
